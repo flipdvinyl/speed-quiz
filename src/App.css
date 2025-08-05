@@ -431,6 +431,22 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 타이핑 커서 애니메이션 */
+.typing-cursor {
+  animation: blink 1s infinite;
+  font-weight: bold;
+  color: #000000;
+}
+
+@keyframes blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
 /* 게임 종료 화면 */
 .game-over-screen h2 {
   font-size: 1.8rem;
