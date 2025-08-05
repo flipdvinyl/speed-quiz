@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { GameState, Player, QuizQuestion } from './types';
 import { quizQuestions } from './data';
 import './App.css';
@@ -116,6 +116,12 @@ function App() {
     return [...animationTimes, ...remainingTimes];
   }, []);
 
+  // 현재 문제의 애니메이션 시간 메모이제이션
+  const currentAnimationTimes = useMemo(() => {
+    if (!currentQuestion) return [];
+    return calculateCharacterAnimationTimes(currentQuestion.word);
+  }, [currentQuestion, calculateCharacterAnimationTimes]);
+
   // 다음 문제로 넘어가기
   const goToNextQuestion = useCallback(() => {
     if (!currentQuestion) return;
@@ -210,9 +216,17 @@ function App() {
       if (e.key === 'Escape') {
         e.preventDefault();
         goToStart();
-      } else if (gameState === 'playing' && e.key === 'ArrowRight') {
-        e.preventDefault();
-        goToNextQuestion();
+      } else if (gameState === 'playing') {
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          goToNextQuestion();
+        } else if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setGameTimeLeft(prev => Math.min(prev + 10, 300)); // 최대 300초
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setGameTimeLeft(prev => Math.max(prev - 10, 10)); // 최소 10초
+        }
       }
     };
 
@@ -398,29 +412,24 @@ function App() {
                       >
                         {char}
                       </span>
-                    )) : transitionText) : (() => {
-                      // 글자별 애니메이션 시간 미리 계산
-                      const animationTimes = calculateCharacterAnimationTimes(currentQuestion.word);
-                      
-                      return currentQuestion.word.split('').map((char, index) => (
-                        <span 
-                          key={index} 
-                          className="answer-character"
-                          style={{
-                            animation: `characterBlurAnimation ${animationTimes[index]}s linear forwards`
-                          }}
-                        >
-                          {char}
-                        </span>
-                      ));
-                    })()}
+                    )) : transitionText) : currentQuestion.word.split('').map((char, index) => (
+                      <span 
+                        key={index} 
+                        className="answer-character"
+                        style={{
+                          animation: `characterBlurAnimation ${currentAnimationTimes[index]}s linear forwards`
+                        }}
+                      >
+                        {char}
+                      </span>
+                    ))}
                   </div>
                 </div>
 
                 {/* 하단 입력 영역 */}
                 <div className={`answer-section ${isTransitioning ? 'hidden' : ''}`}>
                   <div className="keyboard-hints">
-                    <span>입력: Enter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;다음문제: →</span>
+                    <span>입력: Enter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;다음문제: →&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;시간조절: ↑↓</span>
                   </div>
                   <div className="answer-input">
                     <input
