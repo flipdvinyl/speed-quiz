@@ -286,7 +286,7 @@
 }
 
 .keyboard-hints {
-  margin-top: 15px;
+  margin-top: calc(15px - 1vh);
   padding: 0px;
   font-size: 20px;
   color: #000000;
@@ -379,7 +379,7 @@
 }
 
 .keyboard-hints {
-  margin-top: 15px;
+  margin-top: calc(15px - 1vh);
   padding: 0px;
   font-size: 20px;
   color: #000000;
@@ -604,18 +604,6 @@
   pointer-events: none;
   z-index: 0;
   animation: timeMove 15s linear forwards;
-  /* Dither 효과로 banding 제거 */
-  filter: contrast(1.1) brightness(1.05) saturate(1.1);
-  backdrop-filter: blur(0.5px);
-  -webkit-backdrop-filter: blur(0.5px);
-  /* 추가적인 banding 제거 효과 */
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* Blend mode로 추가 dither 효과 */
-  mix-blend-mode: multiply;
-  isolation: isolate;
 }
 
 @keyframes timeMove {
