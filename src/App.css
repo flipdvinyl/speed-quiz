@@ -1,0 +1,617 @@
+/* 전체 앱 스타일 */
+.app {
+  height: 100vh;
+  background: #dcdcdc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Pretendard JP', sans-serif;
+  overflow: hidden;
+}
+
+.container {
+  background: transparent;
+  width: 100%;
+  height: 100vh;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  overflow: hidden;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: bold;
+  color: #2d3748;
+  margin-bottom: 20px;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+/* 시작 화면 */
+.start-screen h2 {
+  font-size: 1.5rem;
+  color: #2d3748;
+  margin-bottom: 10px;
+}
+
+.start-screen p {
+  font-size: 1rem;
+  color: #4a5568;
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.input-group {
+  margin-bottom: 20px;
+}
+
+.name-input {
+  width: 100%;
+  max-width: 300px;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.name-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.start-btn, .ranking-btn, .restart-btn, .back-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin: 8px;
+  min-width: 140px;
+}
+
+.start-btn:hover, .ranking-btn:hover, .restart-btn:hover, .back-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.ranking-btn {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.ranking-btn:hover {
+  box-shadow: 0 10px 20px rgba(245, 87, 108, 0.3);
+}
+
+/* 게임 화면 */
+.game-screen {
+  text-align: center;
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 65px 60px;
+}
+
+.score, .timer {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #000000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: -15px;
+  font-family: 'Pretendard JP', sans-serif;
+  position: relative;
+}
+
+.score-label, .timer-label {
+  font-size: 24px;
+  color: #000000;
+  font-weight: bold;
+  text-align: center;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+.score-value, .timer-value {
+  font-size: 80px;
+  font-weight: 600;
+  color: #000000;
+  border-bottom: 1px solid #999999;
+  padding-bottom: 2px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  font-family: 'Pretendard JP', sans-serif;
+  width: 160px;
+  justify-content: center;
+  min-width: 160px;
+  max-width: 160px;
+}
+
+.timer-unit {
+  position: absolute;
+  right: -25px;
+  top: calc(50% + 20px);
+  transform: translateY(-50%);
+  font-size: 24px;
+  color: #000000;
+  font-weight: bold;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+.score-unit {
+  position: absolute;
+  right: -25px;
+  top: calc(50% + 20px);
+  transform: translateY(-50%);
+  font-size: 24px;
+  color: #000000;
+  font-weight: bold;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+.score {
+  color: #000000;
+}
+
+.timer {
+  color: #000000;
+}
+
+/* 왼쪽 타이머 영역 - 제거하고 상단으로 이동 */
+.left-timer-area {
+  display: none;
+}
+
+/* 중앙 정답 영역 */
+.answer-placeholder-container {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%) translateY(-10vh);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.question-container {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 정답 플레이스홀더 */
+.answer-placeholder {
+  font-size: 280px;
+  font-weight: bold;
+  color: #000000;
+  text-align: center;
+  width: 100%;
+  font-family: 'Pretendard JP', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.answer-character {
+  filter: blur(100px);
+}
+
+@keyframes characterBlurAnimation {
+  0% {
+    filter: blur(100px);
+  }
+  100% {
+    filter: blur(0px);
+  }
+}
+
+/* 하단 입력 영역 */
+.answer-section {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 25vh;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3vh;
+  padding-bottom: 4vh;
+  margin: 0 auto;
+}
+
+.description {
+  font-size: 32px;
+  color: #000000;
+  line-height: 1.4;
+  text-align: center;
+  width: 90%;
+  margin: 0 auto;
+  font-family: 'Pretendard JP', sans-serif;
+  font-weight: bold;
+}
+
+.answer-input {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-width: 400px;
+}
+
+.answer-field {
+  width: 100%;
+  padding: 15px 20px;
+  border: none;
+  font-size: 32px;
+  transition: all 0.3s ease;
+  background: white;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+.answer-field:focus {
+  outline: none;
+}
+
+.answer-field.wrong-input {
+  border: none;
+}
+
+.answer-field.wrong-input::placeholder {
+  color: #e53e3e;
+}
+
+.keyboard-hints {
+  margin-top: 15px;
+  padding: 0px;
+  font-size: 20px;
+  color: #000000;
+  font-family: 'Pretendard JP', sans-serif;
+  font-weight: normal;
+}
+
+/* 제목 고정 위치 */
+.quiz-title-fixed {
+  position: absolute;
+  top: 110px;
+  left: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+}
+
+.quiz-title-fixed .title {
+  font-size: 40px;
+  font-weight: bold;
+  color: #000000;
+  margin: 0;
+  font-family: 'Pretendard JP', sans-serif;
+}
+
+/* 반응형 디자인 */
+@media (min-width: 1200px) {
+  .answer-placeholder {
+    font-size: 280px;
+  }
+  
+  .description {
+    font-size: 32px;
+    width: 90%;
+  }
+  
+  .answer-field {
+    font-size: 32px;
+    padding: 18px 24px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .answer-placeholder {
+    font-size: 280px;
+  }
+  
+  .description {
+    font-size: 32px;
+    width: 90%;
+  }
+  
+  .answer-field {
+    font-size: 32px;
+    padding: 20px 28px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .answer-placeholder {
+    font-size: 280px;
+  }
+  
+  .description {
+    font-size: 32px;
+    width: 90%;
+  }
+  
+  .answer-field {
+    font-size: 32px;
+    padding: 12px 16px;
+  }
+}
+
+
+.feedback {
+  margin-top: 20px;
+  padding: 15px;
+  border-radius: 10px;
+  font-weight: 600;
+  animation: fadeIn 0.3s ease;
+}
+
+.feedback.wrong {
+  background: #fed7d7;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+}
+
+.keyboard-hints {
+  margin-top: 15px;
+  padding: 0px;
+  font-size: 20px;
+  color: #000000;
+  font-family: 'Pretendard JP', sans-serif;
+  font-weight: normal;
+}
+
+/* 전환 상태일 때는 블러 없음 */
+.answer-placeholder.transitioning {
+  filter: blur(0px);
+  animation: none;
+}
+
+/* 전환 중에 숨길 요소들 */
+.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 다음문제 텍스트 */
+.next-text {
+  font-size: 24px;
+  font-weight: bold;
+  color: #000000;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.next-text:hover {
+  color: #333333;
+  transform: translateY(-50%) scale(1.05);
+}
+
+@keyframes blurAnimation {
+  0% {
+    filter: blur(100px);
+  }
+  100% {
+    filter: blur(0px);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 게임 종료 화면 */
+.game-over-screen h2 {
+  font-size: 1.8rem;
+  color: #2d3748;
+  margin-bottom: 15px;
+}
+
+.final-score {
+  background: #f7fafc;
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 20px;
+}
+
+.final-score p {
+  font-size: 1.2rem;
+  margin: 10px 0;
+  color: #4a5568;
+}
+
+.score-highlight {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #38a169;
+}
+
+.game-over-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* 랭킹 화면 */
+.ranking-screen h2 {
+  font-size: 1.8rem;
+  color: #2d3748;
+  margin-bottom: 20px;
+}
+
+.rankings-list {
+  background: #f7fafc;
+  border-radius: 15px;
+  padding: 15px;
+  margin-bottom: 20px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.ranking-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  margin: 8px 0;
+  background: #ffffff;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  border: 1px solid #e2e8f0;
+}
+
+.ranking-item:hover {
+  background: #edf2f7;
+  transform: translateX(5px);
+}
+
+.ranking-item:nth-child(1) {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  color: #2d3748;
+  font-weight: bold;
+}
+
+.ranking-item:nth-child(2) {
+  background: linear-gradient(135deg, #c0c0c0 0%, #e2e8f0 100%);
+  color: #2d3748;
+  font-weight: bold;
+}
+
+.ranking-item:nth-child(3) {
+  background: linear-gradient(135deg, #cd7f32 0%, #d69e2e 100%);
+  color: white;
+  font-weight: bold;
+}
+
+.rank {
+  font-weight: bold;
+  font-size: 1.1rem;
+  min-width: 50px;
+}
+
+.player-name {
+  flex: 1;
+  text-align: left;
+  margin-left: 20px;
+  font-weight: 500;
+}
+
+.player-score {
+  font-weight: bold;
+  color: #38a169;
+  font-size: 1.1rem;
+}
+
+/* 반응형 디자인 */
+@media (max-width: 768px) {
+  .container {
+    padding: 20px;
+    margin: 10px;
+  }
+  
+  .title {
+    font-size: 2rem;
+  }
+  
+  .game-info {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .answer-input {
+    flex-direction: column;
+  }
+  
+  .answer-field {
+    min-width: 100%;
+  }
+  
+  .game-over-buttons {
+    flex-direction: column;
+  }
+  
+  .ranking-item {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+  
+  .player-name {
+    text-align: center;
+    margin-left: 0;
+  }
+}
+
+/* 스크롤바 스타일 */
+.rankings-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.rankings-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.rankings-list::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.rankings-list::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* 시간 오버레이 */
+.time-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: 0;
+  transform-origin: right;
+  animation: timeShrink 15s linear forwards;
+}
+
+@keyframes timeShrink {
+  0% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(0);
+  }
+}
