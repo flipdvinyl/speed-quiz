@@ -160,7 +160,7 @@ function App() {
       setIsCorrect(null);
       
       // 타이핑 애니메이션 시작 (완료 후 전환)
-      startTypingAnimation('🎉 정답 🎉', () => {
+      startTypingAnimation('정답', () => {
         setCurrentQuestion(getNextQuestion());
         setTimeLeft(15);
         setTimeLeftDecimal(0);
@@ -403,17 +403,21 @@ function App() {
                   >
                     {isTransitioning ? (typingPhase !== 'none' ? 
                     <div className="typing-container">
-                      {typingText.split('').map((char, index) => (
-                        <span 
-                          key={index} 
-                          style={{ 
-                            opacity: index < visibleCharCount ? 1 : 0
-                          }}
-                        >
-                          {char}
-                        </span>
-                      ))}
-                      <span className="typing-cursor">|</span>
+                      {typingText.split('').map((char, index) => {
+                        const isEmoji = /\p{Emoji}/u.test(char);
+                        return (
+                          <span 
+                            key={index} 
+                            style={{ 
+                              opacity: index < visibleCharCount ? 1 : 0
+                            }}
+                            className={isEmoji ? 'emoji-char' : ''}
+                          >
+                            {char}
+                            {index === visibleCharCount - 1 && <span className="typing-cursor">|</span>}
+                          </span>
+                        );
+                      })}
                     </div> : transitionText) : currentQuestion.word.split('').map((char, index) => (
                       <span 
                         key={index} 

@@ -215,6 +215,15 @@
   gap: 10px;
 }
 
+/* 이모지 전용 스타일 */
+.answer-placeholder emoji {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+.emoji-char {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
 .answer-character {
   filter: blur(100px);
 }
@@ -443,9 +452,10 @@
 .typing-cursor {
   animation: blink 1s infinite;
   font-weight: bold;
-  color: #000000;
-  margin-left: -2px;
-  display: inline-block;
+  color: #95fc4d;
+  display: inline;
+  position: relative;
+  top: -0.085em;
 }
 
 @keyframes blink {
