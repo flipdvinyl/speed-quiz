@@ -18,7 +18,7 @@ function App() {
   const [rankings, setRankings] = useState<Player[]>([]);
   const [animationKey, setAnimationKey] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [transitionText, setTransitionText] = useState('');
+
   const [typingText, setTypingText] = useState('');
   const [typingPhase, setTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
   const [visibleCharCount, setVisibleCharCount] = useState(0);
@@ -138,7 +138,6 @@ function App() {
       setTimeLeftDecimal(0);
       setAnimationKey(prev => prev + 1);
       setIsTransitioning(false);
-      setTransitionText('');
     });
   }, [currentQuestion, getNextQuestion, startTypingAnimation]);
 
@@ -165,7 +164,6 @@ function App() {
         setTimeLeftDecimal(0);
         setAnimationKey(prev => prev + 1);
         setIsTransitioning(false);
-        setTransitionText('');
       });
     } else {
       setUserAnswer('');
@@ -400,7 +398,7 @@ function App() {
                     key={animationKey}
                     className={`answer-placeholder ${isTransitioning ? 'transitioning' : ''}`}
                   >
-                    {isTransitioning ? (typingPhase !== 'none' ? 
+                    {isTransitioning ? 
                     typingText.split('').map((char, index) => (
                       <span 
                         key={index} 
@@ -411,7 +409,7 @@ function App() {
                       >
                         {char}
                       </span>
-                    )) : null) : currentQuestion.word.split('').map((char, index) => (
+                    )) : currentQuestion.word.split('').map((char, index) => (
                       <span 
                         key={index} 
                         className="answer-character"
