@@ -429,7 +429,7 @@ function App() {
                 {/* 하단 입력 영역 */}
                 <div className={`answer-section ${isTransitioning ? 'hidden' : ''}`}>
                   <div className="keyboard-hints">
-                    <span>입력: Enter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;다음문제: →&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;시간조절: ↑↓</span>
+                    <span>입력: Enter&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;다음문제: →</span>
                   </div>
                   <div className="answer-input">
                     <input
