@@ -10,8 +10,6 @@ function App() {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(15);
   const [gameTimeLeft, setGameTimeLeft] = useState(120);
-  const [timeLeftDecimal, setTimeLeftDecimal] = useState(0);
-  const [gameTimeLeftDecimal, setGameTimeLeftDecimal] = useState(0);
   const [usedQuestions, setUsedQuestions] = useState<Set<number>>(new Set());
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [playerName, setPlayerName] = useState('');
@@ -30,7 +28,6 @@ function App() {
     setGameState('playing');
     setScore(0);
     setGameTimeLeft(120);
-    setGameTimeLeftDecimal(0);
     setUsedQuestions(new Set());
     setCurrentQuestion(null);
     setUserAnswer('');
@@ -135,9 +132,8 @@ function App() {
     // 타이핑 애니메이션 시작 (완료 후 전환)
     startTypingAnimation('다음문제', () => {
       setCurrentQuestion(getNextQuestion());
-      setTimeLeft(15);
-      setTimeLeftDecimal(0);
-      setAnimationKey(prev => prev + 1);
+              setTimeLeft(15);
+        setAnimationKey(prev => prev + 1);
       setIsTransitioning(false);
       setTransitionText('');
     });
@@ -163,7 +159,6 @@ function App() {
       startTypingAnimation('정답', () => {
         setCurrentQuestion(getNextQuestion());
         setTimeLeft(15);
-        setTimeLeftDecimal(0);
         setAnimationKey(prev => prev + 1);
         setIsTransitioning(false);
         setTransitionText('');
@@ -251,19 +246,8 @@ function App() {
         });
       }, 1000);
 
-      // 소수점 타이머 (0.01초마다 업데이트)
-      const decimalTimer = setInterval(() => {
-        setGameTimeLeftDecimal(prev => {
-          if (prev <= 0.01) {
-            return 0.99;
-          }
-          return prev - 0.01;
-        });
-      }, 10);
-
       return () => {
         clearInterval(gameTimer);
-        clearInterval(decimalTimer);
       };
     }
   }, [gameState, endGame]);
@@ -282,19 +266,8 @@ function App() {
         });
       }, 1000);
 
-      // 소수점 타이머 (0.01초마다 업데이트)
-      const decimalTimer = setInterval(() => {
-        setTimeLeftDecimal(prev => {
-          if (prev <= 0.01) {
-            return 0.99;
-          }
-          return prev - 0.01;
-        });
-      }, 10);
-
       return () => {
         clearInterval(questionTimer);
-        clearInterval(decimalTimer);
       };
     }
   }, [gameState, currentQuestion, goToNextQuestion]);
