@@ -411,7 +411,7 @@ function App() {
                       >
                         {char}
                       </span>
-                    )) : transitionText) : currentQuestion.word.split('').map((char, index) => (
+                    )) : null) : currentQuestion.word.split('').map((char, index) => (
                       <span 
                         key={index} 
                         className="answer-character"
