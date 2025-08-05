@@ -127,7 +127,6 @@ function App() {
     if (!currentQuestion) return;
     
     setIsTransitioning(true);
-    setTransitionText('다음문제');
     setUsedQuestions(prev => new Set([...prev, currentQuestion.id]));
     setUserAnswer('');
     setIsCorrect(null);
