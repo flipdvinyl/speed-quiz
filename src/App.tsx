@@ -18,7 +18,7 @@ function App() {
   const [rankings, setRankings] = useState<Player[]>([]);
   const [animationKey, setAnimationKey] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
-
+  const [transitionText, setTransitionText] = useState('');
   const [typingText, setTypingText] = useState('');
   const [typingPhase, setTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
   const [visibleCharCount, setVisibleCharCount] = useState(0);
@@ -127,6 +127,7 @@ function App() {
     if (!currentQuestion) return;
     
     setIsTransitioning(true);
+    setTransitionText('다음문제');
     setUsedQuestions(prev => new Set([...prev, currentQuestion.id]));
     setUserAnswer('');
     setIsCorrect(null);
@@ -138,6 +139,7 @@ function App() {
       setTimeLeftDecimal(0);
       setAnimationKey(prev => prev + 1);
       setIsTransitioning(false);
+      setTransitionText('');
     });
   }, [currentQuestion, getNextQuestion, startTypingAnimation]);
 
@@ -164,6 +166,7 @@ function App() {
         setTimeLeftDecimal(0);
         setAnimationKey(prev => prev + 1);
         setIsTransitioning(false);
+        setTransitionText('');
       });
     } else {
       setUserAnswer('');
@@ -398,18 +401,17 @@ function App() {
                     key={animationKey}
                     className={`answer-placeholder ${isTransitioning ? 'transitioning' : ''}`}
                   >
-                    {isTransitioning ? 
+                    {isTransitioning ? (typingPhase !== 'none' ? 
                     typingText.split('').map((char, index) => (
                       <span 
                         key={index} 
                         style={{ 
-                          opacity: index < visibleCharCount ? 1 : 0,
-                          transition: 'opacity 0.1s ease'
+                          opacity: index < visibleCharCount ? 1 : 0
                         }}
                       >
                         {char}
                       </span>
-                    )) : currentQuestion.word.split('').map((char, index) => (
+                    )) : transitionText) : currentQuestion.word.split('').map((char, index) => (
                       <span 
                         key={index} 
                         className="answer-character"
