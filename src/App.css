@@ -431,11 +431,21 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 타이핑 컨테이너 */
+.typing-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
 /* 타이핑 커서 애니메이션 */
 .typing-cursor {
   animation: blink 1s infinite;
   font-weight: bold;
   color: #000000;
+  margin-left: -2px;
+  display: inline-block;
 }
 
 @keyframes blink {

@@ -402,7 +402,7 @@ function App() {
                     className={`answer-placeholder ${isTransitioning ? 'transitioning' : ''}`}
                   >
                     {isTransitioning ? (typingPhase !== 'none' ? 
-                    <>
+                    <div className="typing-container">
                       {typingText.split('').map((char, index) => (
                         <span 
                           key={index} 
@@ -414,7 +414,7 @@ function App() {
                         </span>
                       ))}
                       <span className="typing-cursor">|</span>
-                    </> : transitionText) : currentQuestion.word.split('').map((char, index) => (
+                    </div> : transitionText) : currentQuestion.word.split('').map((char, index) => (
                       <span 
                         key={index} 
                         className="answer-character"
