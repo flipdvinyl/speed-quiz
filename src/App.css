@@ -604,18 +604,25 @@
   pointer-events: none;
   z-index: 0;
   animation: timeMove 15s linear forwards;
-  will-change: transform;
-  backface-visibility: hidden;
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
-  -webkit-backface-visibility: hidden;
+  /* Dither 효과로 banding 제거 */
+  filter: contrast(1.1) brightness(1.05) saturate(1.1);
+  backdrop-filter: blur(0.5px);
+  -webkit-backdrop-filter: blur(0.5px);
+  /* 추가적인 banding 제거 효과 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Blend mode로 추가 dither 효과 */
+  mix-blend-mode: multiply;
+  isolation: isolate;
 }
 
 @keyframes timeMove {
   0% {
-    transform: translateX(0) translateZ(0);
+    transform: translateX(0);
   }
   100% {
-    transform: translateX(100%) translateZ(0);
+    transform: translateX(100%);
   }
 }
