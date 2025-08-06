@@ -106,9 +106,8 @@ function App() {
   const [typingPhase, setTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
   const [visibleCharCount, setVisibleCharCount] = useState(0);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string>('');
-  const [isAudioLoading, setIsAudioLoading] = useState(false);
   const answerInputRef = useRef<HTMLInputElement>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [questionOrder, setQuestionOrder] = useState<number[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [lastProcessedQuestionId, setLastProcessedQuestionId] = useState<number | null>(null);
@@ -118,7 +117,6 @@ function App() {
   const currentTTSRequestRef = useRef<AbortController | null>(null);
   const [ttsBuffer, setTtsBuffer] = useState<Map<number, string>>(new Map());
   const [isBuffering, setIsBuffering] = useState(false);
-  const bufferingQueueRef = useRef<number[]>([]);
   const isBufferingRef = useRef(false);
   const ttsBufferRef = useRef<Map<number, string>>(new Map()); // 동기적 버퍼 참조
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null); // BGM 오디오 참조
@@ -549,7 +547,6 @@ function App() {
       playBGM();
     }
     
-    setIsAudioLoading(true);
     setLastProcessedQuestionId(question.id);
     
     try {
@@ -647,7 +644,7 @@ function App() {
         console.error('TTS 생성 또는 재생 실패:', error);
       }
     } finally {
-      setIsAudioLoading(false);
+      // 오디오 로딩 완료
     }
   }, [lastProcessedQuestionId, currentQuestionIndex, currentAudioUrl, ttsBuffer, startSequentialBuffering, playBGM, setBGMVolume]);
 
