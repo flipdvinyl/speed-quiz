@@ -216,7 +216,7 @@ function App() {
   }, []);
 
   // BGM 재생 함수
-  const playBGM = useCallback(() => {
+  const playBGM = useCallback(async () => {
     try {
       // 기존 BGM 정지
       if (bgmAudioRef.current) {
@@ -225,20 +225,27 @@ function App() {
       }
       
       // 새로운 BGM 생성
-      const bgm = new Audio('/src/assets/speed_quiz_bg_01.mp3');
+      const bgm = new Audio('/speed_quiz_bg_01.mp3');
       bgm.volume = 0.5; // 볼륨 50%
       bgm.loop = true; // 반복 재생
       bgmAudioRef.current = bgm;
       
+      console.log('🎵 BGM 로딩 시작...');
+      
+      // 오디오 로드 완료 대기
+      await new Promise((resolve, reject) => {
+        bgm.addEventListener('canplaythrough', resolve, { once: true });
+        bgm.addEventListener('error', reject, { once: true });
+        bgm.load();
+      });
+      
       console.log('🎵 BGM 재생 시작 (볼륨: 50%)');
       
       // BGM 재생
-      bgm.play().catch(error => {
-        console.error('❌ BGM 재생 실패:', error);
-      });
+      await bgm.play();
       
     } catch (error) {
-      console.error('❌ BGM 설정 실패:', error);
+      console.error('❌ BGM 재생 실패:', error);
     }
   }, []);
 
@@ -544,7 +551,7 @@ function App() {
     
     // BGM이 없으면 재생 시작
     if (!bgmAudioRef.current) {
-      playBGM();
+      await playBGM();
     }
     
     setLastProcessedQuestionId(question.id);
