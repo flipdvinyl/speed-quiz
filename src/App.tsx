@@ -1,7 +1,59 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { GameState, Player, QuizQuestion } from './types';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import type { QuizQuestion, Player, GameState } from './types';
 import { quizQuestions } from './data';
 import './App.css';
+
+// TTS API 호출 함수
+const generateTTS = async (text: string, abortController?: AbortController): Promise<string> => {
+  try {
+    const requestBody = {
+      text: text,
+      voice_id: '9802fb2a10bcd75c87bfe5' // voice_settings 제거
+    };
+    
+    console.log('🎤 TTS API 요청:', requestBody);
+    
+    // llm-api 프로젝트의 Vercel URL을 사용
+    const response = await fetch('https://quiet-ink-groq.vercel.app/api/tts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+      signal: abortController?.signal
+    });
+
+    console.log('🎤 TTS API 응답 상태:', response.status);
+    console.log('🎤 TTS API 응답 헤더:', Object.fromEntries(response.headers.entries()));
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('TTS API 응답 에러:', response.status, errorText);
+      throw new Error(`TTS API 호출 실패: ${response.status} ${errorText}`);
+    }
+
+    const audioBlob = await response.blob();
+    console.log('🎤 TTS 오디오 생성 완료:', audioBlob.size, 'bytes');
+    return URL.createObjectURL(audioBlob);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.log('🎤 TTS API 요청 취소됨');
+    } else {
+      console.error('TTS 생성 실패:', error);
+    }
+    return '';
+  }
+};
+
+// 무음 오디오 재생 함수
+const playSilentAudio = () => {
+  const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const source = ctx.createBufferSource();
+  source.buffer = ctx.createBuffer(1, 1, 22050);
+  source.connect(ctx.destination);
+  source.start(0);
+  setTimeout(() => ctx.close(), 300);
+};
 
 function App() {
   const [gameState, setGameState] = useState<GameState>('start');
@@ -10,7 +62,6 @@ function App() {
   const [score, setScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState(15);
   const [gameTimeLeft, setGameTimeLeft] = useState(120);
-  const [usedQuestions, setUsedQuestions] = useState<Set<number>>(new Set());
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [rankings, setRankings] = useState<Player[]>([]);
@@ -20,31 +71,280 @@ function App() {
   const [typingText, setTypingText] = useState('');
   const [typingPhase, setTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
   const [visibleCharCount, setVisibleCharCount] = useState(0);
+  const [currentAudioUrl, setCurrentAudioUrl] = useState<string>('');
+  const [isAudioLoading, setIsAudioLoading] = useState(false);
   const answerInputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [questionOrder, setQuestionOrder] = useState<number[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [lastProcessedQuestionId, setLastProcessedQuestionId] = useState<number | null>(null);
+  const [isProcessingNextQuestion, setIsProcessingNextQuestion] = useState(false);
+  const isProcessingRef = useRef(false);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentTTSRequestRef = useRef<AbortController | null>(null);
+  const [ttsBuffer, setTtsBuffer] = useState<Map<number, string>>(new Map());
+  const [isBuffering, setIsBuffering] = useState(false);
+  const bufferingQueueRef = useRef<number[]>([]);
+  const isBufferingRef = useRef(false);
+  const ttsBufferRef = useRef<Map<number, string>>(new Map()); // 동기적 버퍼 참조
+
+  // 현재 재생 중인 오디오와 TTS 요청 정리
+  const cleanupCurrentAudio = useCallback(() => {
+    console.log('🧹 오디오 정리 시작');
+    
+    // 현재 재생 중인 오디오 정지
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      console.log('🧹 현재 재생 중인 오디오 정지됨');
+    }
+    
+    // 진행 중인 TTS 요청 취소
+    if (currentTTSRequestRef.current) {
+      currentTTSRequestRef.current.abort();
+      currentTTSRequestRef.current = null;
+      console.log('🧹 진행 중인 TTS 요청 취소됨');
+    }
+    
+    // 오디오 URL 정리
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      setCurrentAudioUrl('');
+      console.log('🧹 오디오 URL 정리됨');
+    }
+    
+    // TTS 버퍼는 유지 (정리하지 않음)
+    console.log(`📦 TTS 버퍼 유지: ${ttsBuffer.size}개 항목`);
+  }, [currentAudioUrl, ttsBuffer]);
+
+  // 게임 종료 시 모든 리소스 정리
+  const cleanupAllResources = useCallback(() => {
+    console.log('🧹 모든 리소스 정리 시작');
+    
+    // 현재 재생 중인 오디오 정지
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+    
+    // 진행 중인 TTS 요청 취소
+    if (currentTTSRequestRef.current) {
+      currentTTSRequestRef.current.abort();
+      currentTTSRequestRef.current = null;
+    }
+    
+    // 오디오 URL 정리
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      setCurrentAudioUrl('');
+    }
+    
+    // TTS 버퍼 정리
+    if (ttsBuffer.size > 0) {
+      ttsBuffer.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+      setTtsBuffer(new Map());
+      console.log('🧹 TTS 버퍼 정리됨');
+    }
+    
+    console.log('🧹 모든 리소스 정리 완료');
+  }, [currentAudioUrl, ttsBuffer]);
+
+  // 오디오 컨텍스트 활성화 (자동 재생 정책 우회)
+  const activateAudioContext = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioContext.state === 'suspended') {
+        audioContext.resume();
+        console.log('🔊 오디오 컨텍스트 활성화됨');
+      }
+    } catch (error) {
+      console.error('❌ 오디오 컨텍스트 활성화 실패:', error);
+    }
+  }, []);
+
+  // TTS 버퍼링 함수
+  const bufferTTS = useCallback(async (questionId: number, questionText: string) => {
+    console.log(`📦 TTS 버퍼링 시작: 문제 ID ${questionId}`);
+    
+    // 이미 버퍼에 있으면 스킵
+    if (ttsBufferRef.current.has(questionId)) {
+      console.log(`⏭️ 이미 버퍼에 존재하여 스킵: 문제 ID ${questionId}`);
+      return ttsBufferRef.current.get(questionId);
+    }
+    
+    try {
+      const audioUrl = await generateTTS(questionText);
+      if (audioUrl) {
+        // 동기적으로 버퍼에 추가
+        ttsBufferRef.current.set(questionId, audioUrl);
+        
+        // 상태도 업데이트 (UI 동기화용)
+        setTtsBuffer(prev => {
+          const newBuffer = new Map(prev);
+          newBuffer.set(questionId, audioUrl);
+          console.log(`✅ TTS 버퍼링 완료: 문제 ID ${questionId}, 현재 버퍼 크기: ${newBuffer.size}`);
+          return newBuffer;
+        });
+        
+        return audioUrl; // 성공 시 URL 반환
+      }
+    } catch (error) {
+      console.error(`❌ TTS 버퍼링 실패: 문제 ID ${questionId}`, error);
+    }
+    return null;
+  }, []);
+
+  // 순차적 TTS 버퍼링
+  const startSequentialBuffering = useCallback(async () => {
+    if (isBufferingRef.current || questionOrder.length === 0) {
+      console.log(`🚫 버퍼링 차단: isBuffering=${isBufferingRef.current}, questionOrder.length=${questionOrder.length}`);
+      return;
+    }
+    
+    isBufferingRef.current = true;
+    setIsBuffering(true);
+    console.log('🚀 순차적 TTS 버퍼링 시작');
+    
+    // 현재 인덱스부터 최소 3개 문제를 버퍼링
+    const bufferCount = Math.min(3, questionOrder.length);
+    const bufferedUrls = new Map<number, string>();
+    
+    // 동기적으로 현재 버퍼 상태 확인
+    console.log(`📊 버퍼링 시작 시 현재 ref 버퍼: [${Array.from(ttsBufferRef.current.keys()).join(', ')}]`);
+    
+    for (let i = 0; i < bufferCount; i++) {
+      const questionIndex = (currentQuestionIndex + i) % questionOrder.length;
+      const questionId = questionOrder[questionIndex];
+      const question = quizQuestions.find(q => q.id === questionId);
+      
+      // 동기적으로 버퍼에서 확인 (useRef 사용)
+      if (question && !ttsBufferRef.current.has(questionId)) {
+        // 이미 재생된 문제나 현재 재생 중인 문제는 버퍼링하지 않음
+        if (lastProcessedQuestionId === questionId) {
+          console.log(`⏭️ 이미 재생된 문제 스킵: 문제 ID ${questionId}`);
+          continue;
+        }
+        
+        console.log(`📦 버퍼링 대상: 문제 ID ${questionId} (인덱스 ${questionIndex}), 현재 ref 버퍼: [${Array.from(ttsBufferRef.current.keys()).join(', ')}]`);
+        const audioUrl = await bufferTTS(questionId, question.description);
+        if (audioUrl) {
+          bufferedUrls.set(questionId, audioUrl);
+          console.log(`✅ 버퍼링 완료: 문제 ID ${questionId}, 현재 ref 버퍼: [${Array.from(ttsBufferRef.current.keys()).join(', ')}]`);
+        }
+        // 버퍼링 간격 (서버 부하 방지)
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else if (question) {
+        console.log(`⏭️ 이미 버퍼됨: 문제 ID ${questionId}, 현재 ref 버퍼: [${Array.from(ttsBufferRef.current.keys()).join(', ')}]`);
+      }
+    }
+    
+    isBufferingRef.current = false;
+    setIsBuffering(false);
+    console.log(`✅ 순차적 TTS 버퍼링 완료. 새로 버퍼된 항목: [${Array.from(bufferedUrls.keys()).join(', ')}]`);
+  }, [questionOrder, currentQuestionIndex, bufferTTS, lastProcessedQuestionId]);
+
+  // 문제 순서 생성 함수
+  const generateQuestionOrder = useCallback(() => {
+    const questionIds = quizQuestions.map(q => q.id);
+    const shuffledIds = [...questionIds];
+    
+    // Fisher-Yates 셔플 알고리즘
+    for (let i = shuffledIds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledIds[i], shuffledIds[j]] = [shuffledIds[j], shuffledIds[i]];
+    }
+    
+    return shuffledIds;
+  }, []);
+
+  // 초기 버퍼링 함수 (첫 화면에서 실행)
+  const startInitialBuffering = useCallback(async () => {
+    if (isBufferingRef.current) {
+      console.log(`🚫 초기 버퍼링 차단: 이미 버퍼링 중`);
+      return;
+    }
+    
+    console.log('🚀 초기 TTS 버퍼링 시작 (첫 화면)');
+    
+    // 문제 순서 생성 (게임 시작 전 미리 생성)
+    const initialQuestionOrder = generateQuestionOrder();
+    setQuestionOrder(initialQuestionOrder);
+    
+    isBufferingRef.current = true;
+    setIsBuffering(true);
+    
+    // 처음 5개 문제를 미리 버퍼링
+    const bufferCount = Math.min(5, initialQuestionOrder.length);
+    const bufferedUrls = new Map<number, string>();
+    
+    console.log(`📊 초기 버퍼링 대상: ${bufferCount}개 문제`);
+    
+    for (let i = 0; i < bufferCount; i++) {
+      const questionId = initialQuestionOrder[i];
+      const question = quizQuestions.find(q => q.id === questionId);
+      
+      if (question && !ttsBufferRef.current.has(questionId)) {
+        console.log(`📦 초기 버퍼링: 문제 ID ${questionId} (${i + 1}/${bufferCount})`);
+        const audioUrl = await bufferTTS(questionId, question.description);
+        if (audioUrl) {
+          bufferedUrls.set(questionId, audioUrl);
+        }
+        // 초기 버퍼링은 더 빠르게 (서버 부하 고려)
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+    
+    isBufferingRef.current = false;
+    setIsBuffering(false);
+    console.log(`✅ 초기 TTS 버퍼링 완료. 버퍼된 항목: [${Array.from(bufferedUrls.keys()).join(', ')}]`);
+  }, [generateQuestionOrder, bufferTTS]);
 
   // 게임 시작
   const startGame = useCallback(() => {
     if (!playerName.trim()) return; // 이름이 없으면 시작하지 않음
+    
+    // 기존 타이머 정리
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // 이미 문제 순서가 있으면 그대로 사용, 없으면 새로 생성
+    if (questionOrder.length === 0) {
+      const newQuestionOrder = generateQuestionOrder();
+      setQuestionOrder(newQuestionOrder);
+    }
+    
+    setCurrentQuestionIndex(0);
+    setLastProcessedQuestionId(null);
+    setIsProcessingNextQuestion(false);
+    isProcessingRef.current = false;
+    
+    // 모든 리소스 정리 (버퍼는 유지)
+    cleanupCurrentAudio();
+    
+    playSilentAudio();
     setGameState('playing');
     setScore(0);
     setGameTimeLeft(120);
-    setUsedQuestions(new Set());
     setCurrentQuestion(null);
     setUserAnswer('');
     setIsCorrect(null);
     setAnimationKey(0);
-  }, [playerName]);
-
-  // 다음 문제 선택
-  const getNextQuestion = useCallback(() => {
-    const availableQuestions = quizQuestions.filter(q => !usedQuestions.has(q.id));
-    if (availableQuestions.length === 0) {
-      // 모든 문제를 다 사용했으면 다시 섞기
-      setUsedQuestions(new Set());
-      return quizQuestions[Math.floor(Math.random() * quizQuestions.length)];
-    }
-    return availableQuestions[Math.floor(Math.random() * availableQuestions.length)];
-  }, [usedQuestions]);
+    setTimeLeft(15);
+    
+    // 오디오 컨텍스트 활성화
+    activateAudioContext();
+    
+    // 추가 버퍼링 시작 (백그라운드에서)
+    setTimeout(() => {
+      startSequentialBuffering();
+    }, 100);
+  }, [playerName, questionOrder, generateQuestionOrder, cleanupCurrentAudio, startSequentialBuffering, activateAudioContext]);
 
   // 타이핑 애니메이션 함수
   const startTypingAnimation = useCallback((text: string, onComplete?: () => void) => {
@@ -119,65 +419,249 @@ function App() {
     return calculateCharacterAnimationTimes(currentQuestion.word);
   }, [currentQuestion, calculateCharacterAnimationTimes]);
 
+  // TTS 생성 및 재생 함수
+  const generateAndPlayTTS = useCallback(async (question: QuizQuestion) => {
+    console.log(`🔊 TTS 호출: 문제 ID ${question.id}, 현재 인덱스: ${currentQuestionIndex}, 마지막 처리: ${lastProcessedQuestionId}`);
+    console.log(`📊 현재 버퍼 상태: ${ttsBuffer.size}개 항목, 버퍼된 문제들: [${Array.from(ttsBuffer.keys()).join(', ')}]`);
+    
+    // 이미 처리된 문제면 중복 처리 방지
+    if (lastProcessedQuestionId === question.id) {
+      console.log(`❌ 중복 처리 방지: 문제 ID ${question.id}`);
+      return;
+    }
+    
+    // 기존 오디오 정리
+    cleanupCurrentAudio();
+    
+    setIsAudioLoading(true);
+    setLastProcessedQuestionId(question.id);
+    
+    try {
+      let audioUrl: string;
+      
+      // 동기적으로 버퍼에서 확인 (useRef 사용)
+      const hasInBuffer = ttsBufferRef.current.has(question.id);
+      console.log(`🔍 버퍼 확인: 문제 ID ${question.id}, 버퍼에 있음: ${hasInBuffer}`);
+      console.log(`📊 ref 버퍼 상태: [${Array.from(ttsBufferRef.current.keys()).join(', ')}]`);
+      
+      if (hasInBuffer) {
+        audioUrl = ttsBufferRef.current.get(question.id)!;
+        console.log(`📦 버퍼에서 TTS 사용: 문제 ID ${question.id}`);
+        console.log(`🔗 오디오 URL: ${audioUrl.substring(0, 50)}...`);
+        
+        // 즉시 재생
+        setCurrentAudioUrl(audioUrl);
+        const audio = new Audio(audioUrl);
+        audio.playbackRate = 1.2;
+        currentAudioRef.current = audio;
+        
+        console.log(`🎵 버퍼 오디오 재생 시도: 문제 ID ${question.id}`);
+        try {
+          // 오디오 로드 완료 대기
+          await new Promise((resolve, reject) => {
+            audio.addEventListener('canplaythrough', resolve, { once: true });
+            audio.addEventListener('error', reject, { once: true });
+            audio.load();
+          });
+          
+          await audio.play();
+          console.log(`✅ 버퍼 TTS 재생 완료: 문제 ID ${question.id} (속도: 1.2x)`);
+          
+          // 재생 완료 후 버퍼에서 제거 (성공적으로 재생된 후에만)
+          ttsBufferRef.current.delete(question.id);
+          setTtsBuffer(prev => {
+            const newBuffer = new Map(prev);
+            newBuffer.delete(question.id);
+            console.log(`📦 버퍼에서 제거됨: 문제 ID ${question.id}, 남은 버퍼: ${newBuffer.size}개`);
+            return newBuffer;
+          });
+          
+        } catch (playError) {
+          console.error(`❌ 버퍼 오디오 재생 실패: 문제 ID ${question.id}`, playError);
+          // 재생 실패 시 버퍼에서 제거하지 않음
+        }
+        
+      } else {
+        // 버퍼에 없으면 우선순위를 높여 TTS 생성
+        console.log(`🚨 버퍼에 없음 - 우선순위 TTS 생성: 문제 ID ${question.id}`);
+        
+        // 새로운 AbortController 생성
+        const abortController = new AbortController();
+        currentTTSRequestRef.current = abortController;
+        
+        audioUrl = await generateTTS(question.description, abortController);
+        
+        // 요청이 취소되었으면 처리하지 않음
+        if (abortController.signal.aborted) {
+          console.log(`❌ TTS 요청 취소됨: 문제 ID ${question.id}`);
+          return;
+        }
+        
+        currentTTSRequestRef.current = null;
+        
+        // 생성된 TTS 재생
+        setCurrentAudioUrl(audioUrl);
+        const audio = new Audio(audioUrl);
+        audio.playbackRate = 1.2;
+        currentAudioRef.current = audio;
+        
+        console.log(`🎵 우선순위 오디오 재생 시도: 문제 ID ${question.id}`);
+        try {
+          // 오디오 로드 완료 대기
+          await new Promise((resolve, reject) => {
+            audio.addEventListener('canplaythrough', resolve, { once: true });
+            audio.addEventListener('error', reject, { once: true });
+            audio.load();
+          });
+          
+          await audio.play();
+          console.log(`✅ 우선순위 TTS 재생 완료: 문제 ID ${question.id} (속도: 1.2x)`);
+        } catch (playError) {
+          console.error(`❌ 우선순위 오디오 재생 실패: 문제 ID ${question.id}`, playError);
+        }
+      }
+      
+      // 다음 문제들을 미리 버퍼링 (백그라운드에서)
+      setTimeout(() => {
+        startSequentialBuffering();
+      }, 100);
+      
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log(`❌ TTS 요청 취소됨: 문제 ID ${question.id}`);
+      } else {
+        console.error('TTS 생성 또는 재생 실패:', error);
+      }
+    } finally {
+      setIsAudioLoading(false);
+    }
+  }, [lastProcessedQuestionId, currentQuestionIndex, cleanupCurrentAudio, ttsBuffer, startSequentialBuffering]);
+
   // 다음 문제로 넘어가기
   const goToNextQuestion = useCallback(() => {
-    if (!currentQuestion) return;
+    // 즉시 차단 (ref 사용)
+    if (isProcessingRef.current) {
+      console.log(`🚫 goToNextQuestion 즉시 차단: 이미 처리 중`);
+      return;
+    }
     
+    if (!currentQuestion || isTransitioning || isProcessingNextQuestion) {
+      console.log(`🚫 goToNextQuestion 차단: currentQuestion=${!!currentQuestion}, isTransitioning=${isTransitioning}, isProcessingNextQuestion=${isProcessingNextQuestion}`);
+      return;
+    }
+    
+    console.log(`🔄 goToNextQuestion 시작: 문제 ID ${currentQuestion.id}`);
+    isProcessingRef.current = true;
+    setIsProcessingNextQuestion(true);
     setIsTransitioning(true);
     setTransitionText('다음문제');
-    setUsedQuestions(prev => new Set([...prev, currentQuestion.id]));
     setUserAnswer('');
     setIsCorrect(null);
     
+    // 현재 오디오 정리
+    cleanupCurrentAudio();
+    
     // 타이핑 애니메이션 시작 (완료 후 전환)
     startTypingAnimation('다음문제', () => {
-      setCurrentQuestion(getNextQuestion());
-              setTimeLeft(15);
-        setAnimationKey(prev => prev + 1);
+      // 인덱스 이동 후 새로운 문제 가져오기
+      const nextIndex = currentQuestionIndex + 1 >= questionOrder.length ? 0 : currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIndex);
+      
+      const nextQuestionId = questionOrder[nextIndex];
+      const newQuestion = quizQuestions.find(q => q.id === nextQuestionId);
+      
+      console.log(`🔄 다음 문제로 이동: 인덱스 ${currentQuestionIndex} → ${nextIndex}, 문제 ID ${nextQuestionId}`);
+      
+      setCurrentQuestion(newQuestion || null);
+      if (newQuestion) {
+        generateAndPlayTTS(newQuestion);
+      }
+      setTimeLeft(15);
+      setAnimationKey(prev => prev + 1);
       setIsTransitioning(false);
       setTransitionText('');
+      setIsProcessingNextQuestion(false);
+      isProcessingRef.current = false;
     });
-  }, [currentQuestion, getNextQuestion, startTypingAnimation]);
+  }, [currentQuestion, questionOrder, currentQuestionIndex, startTypingAnimation, generateAndPlayTTS, isTransitioning, isProcessingNextQuestion, cleanupCurrentAudio]);
 
   // 문제 제출
   const submitAnswer = useCallback(() => {
-    if (!currentQuestion || !userAnswer.trim()) return;
+    // 즉시 차단 (ref 사용)
+    if (isProcessingRef.current) {
+      console.log(`🚫 submitAnswer 즉시 차단: 이미 처리 중`);
+      return;
+    }
+    
+    if (!currentQuestion || !userAnswer.trim() || isTransitioning || isProcessingNextQuestion) {
+      console.log(`🚫 submitAnswer 차단: currentQuestion=${!!currentQuestion}, userAnswer=${!!userAnswer.trim()}, isTransitioning=${isTransitioning}, isProcessingNextQuestion=${isProcessingNextQuestion}`);
+      return;
+    }
 
     const isAnswerCorrect = userAnswer.trim().toLowerCase() === currentQuestion.word.toLowerCase();
     setIsCorrect(isAnswerCorrect);
 
     if (isAnswerCorrect) {
+      console.log(`✅ 정답 제출: 문제 ID ${currentQuestion.id}`);
       // 남은 초의 앞자리 수로 점수 계산
       const timeScore = Math.floor(timeLeft);
       setScore(prev => prev + timeScore);
+      isProcessingRef.current = true;
       setIsTransitioning(true);
-      setUsedQuestions(prev => new Set([...prev, currentQuestion.id]));
+      setIsProcessingNextQuestion(true);
       setUserAnswer('');
       setIsCorrect(null);
       
+      // 현재 오디오 정리
+      cleanupCurrentAudio();
+      
       // 타이핑 애니메이션 시작 (완료 후 전환)
       startTypingAnimation('정답', () => {
-        setCurrentQuestion(getNextQuestion());
+        // 인덱스 이동 후 새로운 문제 가져오기
+        const nextIndex = currentQuestionIndex + 1 >= questionOrder.length ? 0 : currentQuestionIndex + 1;
+        setCurrentQuestionIndex(nextIndex);
+        
+        const nextQuestionId = questionOrder[nextIndex];
+        const newQuestion = quizQuestions.find(q => q.id === nextQuestionId);
+        
+        console.log(`🔄 정답 후 다음 문제로 이동: 인덱스 ${currentQuestionIndex} → ${nextIndex}, 문제 ID ${nextQuestionId}`);
+        
+        setCurrentQuestion(newQuestion || null);
+        if (newQuestion) {
+          generateAndPlayTTS(newQuestion);
+        }
         setTimeLeft(15);
         setAnimationKey(prev => prev + 1);
         setIsTransitioning(false);
         setTransitionText('');
+        setIsProcessingNextQuestion(false);
+        isProcessingRef.current = false;
       });
     } else {
       setUserAnswer('');
       setIsCorrect(false);
     }
-  }, [currentQuestion, userAnswer, getNextQuestion, timeLeft]);
+  }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, cleanupCurrentAudio]);
 
   // 이름 입력 시 엔터키 처리
   const handleNameKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && playerName.trim()) {
+      playSilentAudio();
       startGame();
     }
   }, [playerName, startGame]);
 
   // 게임 종료
   const endGame = useCallback(() => {
+    // 타이머 정리
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    
+    // 모든 리소스 정리
+    cleanupAllResources();
+    
     setGameState('gameOver');
     const newPlayer: Player = {
       name: playerName || '익명',
@@ -185,7 +669,7 @@ function App() {
       timestamp: Date.now()
     };
     setRankings(prev => [...prev, newPlayer].sort((a, b) => b.score - a.score).slice(0, 10));
-  }, [playerName, score]);
+  }, [playerName, score, cleanupAllResources]);
 
   // 랭킹 보기
   const showRankings = useCallback(() => {
@@ -194,8 +678,11 @@ function App() {
 
   // 시작 화면으로 돌아가기
   const goToStart = useCallback(() => {
+    // 모든 리소스 정리
+    cleanupAllResources();
+    
     setGameState('start');
-  }, []);
+  }, [cleanupAllResources]);
 
   // 키보드 이벤트 처리
   useEffect(() => {
@@ -254,8 +741,14 @@ function App() {
 
   // 문제 타이머
   useEffect(() => {
-    if (gameState === 'playing' && currentQuestion) {
-      const questionTimer = setInterval(() => {
+    // 기존 타이머 정리
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (gameState === 'playing' && currentQuestion && !isTransitioning) {
+      timerRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
             // 시간 초과 시 자동으로 다음 문제로 넘어가기
@@ -265,21 +758,36 @@ function App() {
           return prev - 1;
         });
       }, 1000);
-
-      return () => {
-        clearInterval(questionTimer);
-      };
     }
-  }, [gameState, currentQuestion, goToNextQuestion]);
 
-
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [gameState, currentQuestion, isTransitioning]); // isTransitioning만 의존성으로 유지
 
   // 첫 문제 설정
   useEffect(() => {
-    if (gameState === 'playing' && !currentQuestion) {
-      setCurrentQuestion(getNextQuestion());
+    if (gameState === 'playing' && !currentQuestion && questionOrder.length > 0) {
+      console.log(`🎮 첫 문제 설정: 문제 순서 길이 ${questionOrder.length}`);
+      // 첫 번째 문제 (인덱스 0)를 가져오기
+      const firstQuestionId = questionOrder[0];
+      const firstQuestion = quizQuestions.find(q => q.id === firstQuestionId);
+      
+      if (firstQuestion) {
+        console.log(`🎯 첫 문제 설정: 문제 ID ${firstQuestionId}`);
+        console.log(`📊 현재 버퍼 상태: ${ttsBuffer.size}개 항목`);
+        setCurrentQuestion(firstQuestion);
+        
+        // 초기 버퍼링이 완료되었을 가능성이 높으므로 짧은 대기 후 TTS 재생
+        setTimeout(() => {
+          generateAndPlayTTS(firstQuestion);
+        }, 500); // 초기 버퍼링을 고려하여 대기 시간 단축
+      }
     }
-  }, [gameState, currentQuestion, getNextQuestion]);
+  }, [gameState, currentQuestion, questionOrder, generateAndPlayTTS, ttsBuffer]);
 
   // 시작 화면에서 이름 입력칸에 포커스 설정
   useEffect(() => {
@@ -292,6 +800,17 @@ function App() {
       }
     }
   }, [gameState]);
+
+  // 첫 화면에서 초기 버퍼링 시작
+  useEffect(() => {
+    if (gameState === 'start' && questionOrder.length === 0) {
+      console.log('🎯 첫 화면에서 초기 버퍼링 시작');
+      // 약간의 지연 후 초기 버퍼링 시작 (페이지 로드 완료 후)
+      setTimeout(() => {
+        startInitialBuffering();
+      }, 500);
+    }
+  }, [gameState, questionOrder.length, startInitialBuffering]);
 
   // 게임 중 입력창 포커스 유지
   useEffect(() => {
@@ -311,17 +830,26 @@ function App() {
       <div className="container">
         {gameState === 'playing' && (
           <div className="quiz-title-fixed">
+            <div className="subtitle">수퍼톤 TTS로 듣고 풀어보는</div>
             <h1 className="title">광고 상식 스피드 퀴즈</h1>
           </div>
         )}
         {gameState !== 'playing' && (
-          <h1 className="title">광고 상식 스피드 퀴즈</h1>
+          <div className="title-container">
+            <div className="subtitle">수퍼톤 TTS로 듣고 풀어보는</div>
+            <h1 className="title">광고 상식 스피드 퀴즈</h1>
+          </div>
         )}
         
         {gameState === 'start' && (
           <div className="start-screen">
             <h2>광고 산업 상식 퀴즈</h2>
             <p>2분 동안 최대한 많은 광고 용어를 맞춰보세요!</p>
+            {isBuffering && (
+              <div className="buffering-status">
+                <p>🎵 오디오 준비 중... ({ttsBuffer.size}개 완료)</p>
+              </div>
+            )}
             <div className="input-group">
               <input
                 type="text"
@@ -362,11 +890,13 @@ function App() {
             
             {currentQuestion && (
               <div className="question-container">
-                {/* 시간 오버레이 */}
+                {/* 프로그레스바 */}
                 <div 
-                  key={`time-overlay-${animationKey}`}
-                  className={`time-overlay ${isTransitioning ? 'hidden' : ''}`}
-                />
+                  key={`progress-bar-${animationKey}`}
+                  className={`progress-bar ${isTransitioning ? 'hidden' : ''}`}
+                >
+                  <div className="progress-fill"></div>
+                </div>
                 
                 {/* 큰 정답 영역 */}
                 <div className="answer-placeholder-container">
@@ -421,7 +951,9 @@ function App() {
                       autoFocus
                     />
                   </div>
-                  <div className="description">“ {currentQuestion.description} ”</div>
+                  <div className="description-container">
+                    <div className="description">“ {currentQuestion.description} ”</div>
+                  </div>
                 </div>
               </div>
             )}
