@@ -312,6 +312,8 @@
   transition: all 0.3s ease;
   background: white;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Pretendard JP', sans-serif;
+  transform: scale(0.8);
+  transform-origin: center;
 }
 
 .answer-field:focus {
@@ -379,6 +381,8 @@
   .answer-field {
     font-size: 32px;
     padding: 18px 24px;
+    transform: scale(0.8);
+    transform-origin: center;
   }
 }
 
@@ -395,6 +399,8 @@
   .answer-field {
     font-size: 32px;
     padding: 20px 28px;
+    transform: scale(0.8);
+    transform-origin: center;
   }
 }
 
@@ -542,6 +548,63 @@
   flex-wrap: wrap;
 }
 
+.ranking-section {
+  margin: 30px 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.ranking-section h3 {
+  margin: 0 0 15px 0;
+  font-size: 1.3rem;
+  color: #2d3748;
+  text-align: center;
+}
+
+.rankings-preview {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.ranking-preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  margin: 5px 0;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.ranking-preview-item.current-player {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+  transform: scale(1.02);
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.ranking-preview-item .rank {
+  font-weight: bold;
+  min-width: 40px;
+}
+
+.ranking-preview-item .player-name {
+  flex: 1;
+  text-align: center;
+  margin: 0 10px;
+}
+
+.ranking-preview-item .player-score {
+  font-weight: bold;
+  min-width: 60px;
+  text-align: right;
+}
+
 /* 랭킹 화면 */
 .ranking-screen h2 {
   font-size: 1.8rem;
@@ -634,6 +697,8 @@
   
   .answer-field {
     min-width: 100%;
+    transform: scale(0.8);
+    transform-origin: center;
   }
   
   .game-over-buttons {

@@ -3,15 +3,49 @@ import type { QuizQuestion, Player, GameState } from './types';
 import { quizQuestions } from './data';
 import './App.css';
 
+// 목소리 목록 정의
+const voiceList = [
+  { id: '7923018d32ff96a5d2ccc5', name: 'Goro', style: 'happy', speed: 1.2 },
+  { id: '1d1e8432baf80566635226', name: 'Rachel', style: 'happy', speed: 1.2 },
+  { id: 'c913e4f120724f32fb72de', name: 'Rick', style: 'embarrassed', speed: 1.2 },
+  { id: '32d43349abb5df0c414df1', name: 'Evan', style: 'sad', speed: 1.2 },
+  { id: '8f613eacb1f3ccd5abb1cb', name: 'Kadako', style: 'neutral', speed: 1.2 },
+  { id: '812658ca9168fd9e2a9afe', name: 'Saza', style: 'neutral', speed: 1.3 },
+  { id: '084714312eb4ec06fbfe51', name: 'Tilly', style: 'shy', speed: 1.2 },
+  { id: '52dc253df44d06aa7f0867', name: 'Bella', style: 'angry', speed: 1.2 },
+  { id: '7c8586b2869391ac4c7389', name: 'Dorothy', style: 'excited', speed: 1.2 },
+  { id: '5a56362b7597d7e3218bdf', name: 'Jack', style: 'angry', speed: 1.0 },
+  { id: '427bbfa89704dfba8feed4', name: 'Kaori', style: 'surprised', speed: 1.2 },
+  { id: 'd2309f803e351a6683438b', name: 'Yepi', style: 'sleepy', speed: 1.1 },
+  { id: '7f8873011eeba6f11b750f', name: 'Ken', style: 'angry', speed: 1.2 }
+];
+
+// 랜덤 목소리 선택 함수
+const getRandomVoice = () => {
+  const randomIndex = Math.floor(Math.random() * voiceList.length);
+  return voiceList[randomIndex];
+};
+
 // TTS API 호출 함수
 const generateTTS = async (text: string, abortController?: AbortController): Promise<string> => {
   try {
+    // 랜덤 목소리 선택
+    const randomVoice = getRandomVoice();
+    
     const requestBody = {
       text: text,
-      voice_id: '9802fb2a10bcd75c87bfe5' // voice_settings 제거
+      voice_id: randomVoice.id,
+      style: randomVoice.style,
+      voice_settings: {
+        pitch_shift: 0,
+        pitch_variance: 1,
+        speed: randomVoice.speed
+      }
     };
     
-    console.log('🎤 TTS API 요청:', requestBody);
+    console.log(`🎤 선택된 목소리: ${randomVoice.name} (${randomVoice.style}, ${randomVoice.speed}x)`);
+    
+    console.log('🎤 TTS API 요청:', JSON.stringify(requestBody, null, 2));
     
     // llm-api 프로젝트의 Vercel URL을 사용
     const response = await fetch('https://quiet-ink-groq.vercel.app/api/tts', {
@@ -25,7 +59,7 @@ const generateTTS = async (text: string, abortController?: AbortController): Pro
 
     console.log('🎤 TTS API 응답 상태:', response.status);
     console.log('🎤 TTS API 응답 헤더:', Object.fromEntries(response.headers.entries()));
-
+    
     if (!response.ok) {
       const errorText = await response.text();
       console.error('TTS API 응답 에러:', response.status, errorText);
@@ -87,6 +121,17 @@ function App() {
   const bufferingQueueRef = useRef<number[]>([]);
   const isBufferingRef = useRef(false);
   const ttsBufferRef = useRef<Map<number, string>>(new Map()); // 동기적 버퍼 참조
+  const bgmAudioRef = useRef<HTMLAudioElement | null>(null); // BGM 오디오 참조
+
+  // BGM 중지 함수
+  const stopBGM = useCallback(() => {
+    if (bgmAudioRef.current) {
+      bgmAudioRef.current.pause();
+      bgmAudioRef.current.currentTime = 0;
+      bgmAudioRef.current = null;
+      console.log('🔇 BGM 중지됨');
+    }
+  }, []);
 
   // 현재 재생 중인 오디오와 TTS 요청 정리
   const cleanupCurrentAudio = useCallback(() => {
@@ -114,9 +159,12 @@ function App() {
       console.log('🧹 오디오 URL 정리됨');
     }
     
+    // BGM 중지
+    stopBGM();
+    
     // TTS 버퍼는 유지 (정리하지 않음)
     console.log(`📦 TTS 버퍼 유지: ${ttsBuffer.size}개 항목`);
-  }, [currentAudioUrl, ttsBuffer]);
+  }, [currentAudioUrl, ttsBuffer, stopBGM]);
 
   // 게임 종료 시 모든 리소스 정리
   const cleanupAllResources = useCallback(() => {
@@ -150,8 +198,11 @@ function App() {
       console.log('🧹 TTS 버퍼 정리됨');
     }
     
+    // BGM 중지
+    stopBGM();
+    
     console.log('🧹 모든 리소스 정리 완료');
-  }, [currentAudioUrl, ttsBuffer]);
+  }, [currentAudioUrl, ttsBuffer, stopBGM]);
 
   // 오디오 컨텍스트 활성화 (자동 재생 정책 우회)
   const activateAudioContext = useCallback(() => {
@@ -163,6 +214,41 @@ function App() {
       }
     } catch (error) {
       console.error('❌ 오디오 컨텍스트 활성화 실패:', error);
+    }
+  }, []);
+
+  // BGM 재생 함수
+  const playBGM = useCallback(() => {
+    try {
+      // 기존 BGM 정지
+      if (bgmAudioRef.current) {
+        bgmAudioRef.current.pause();
+        bgmAudioRef.current.currentTime = 0;
+      }
+      
+      // 새로운 BGM 생성
+      const bgm = new Audio('/src/assets/speed_quiz_bg_01.mp3');
+      bgm.volume = 0.5; // 볼륨 50%
+      bgm.loop = true; // 반복 재생
+      bgmAudioRef.current = bgm;
+      
+      console.log('🎵 BGM 재생 시작 (볼륨: 50%)');
+      
+      // BGM 재생
+      bgm.play().catch(error => {
+        console.error('❌ BGM 재생 실패:', error);
+      });
+      
+    } catch (error) {
+      console.error('❌ BGM 설정 실패:', error);
+    }
+  }, []);
+
+  // BGM 볼륨 조절 함수
+  const setBGMVolume = useCallback((volume: number) => {
+    if (bgmAudioRef.current) {
+      bgmAudioRef.current.volume = volume;
+      console.log(`🎵 BGM 볼륨 변경: ${Math.round(volume * 100)}%`);
     }
   }, []);
 
@@ -430,8 +516,38 @@ function App() {
       return;
     }
     
-    // 기존 오디오 정리
-    cleanupCurrentAudio();
+    // 기존 오디오 정리 (BGM은 유지)
+    console.log('🧹 TTS 오디오 정리 시작');
+    
+    // 현재 재생 중인 TTS 오디오 정지
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      console.log('🧹 현재 재생 중인 TTS 오디오 정지됨');
+    }
+    
+    // 진행 중인 TTS 요청 취소
+    if (currentTTSRequestRef.current) {
+      currentTTSRequestRef.current.abort();
+      currentTTSRequestRef.current = null;
+      console.log('🧹 진행 중인 TTS 요청 취소됨');
+    }
+    
+    // 오디오 URL 정리
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      setCurrentAudioUrl('');
+      console.log('🧹 TTS 오디오 URL 정리됨');
+    }
+    
+    // BGM 볼륨을 20%로 줄임 (중지하지 않음)
+    setBGMVolume(0.2);
+    
+    // BGM이 없으면 재생 시작
+    if (!bgmAudioRef.current) {
+      playBGM();
+    }
     
     setIsAudioLoading(true);
     setLastProcessedQuestionId(question.id);
@@ -452,7 +568,6 @@ function App() {
         // 즉시 재생
         setCurrentAudioUrl(audioUrl);
         const audio = new Audio(audioUrl);
-        audio.playbackRate = 1.2;
         currentAudioRef.current = audio;
         
         console.log(`🎵 버퍼 오디오 재생 시도: 문제 ID ${question.id}`);
@@ -465,7 +580,7 @@ function App() {
           });
           
           await audio.play();
-          console.log(`✅ 버퍼 TTS 재생 완료: 문제 ID ${question.id} (속도: 1.2x)`);
+          console.log(`✅ 버퍼 TTS 재생 완료: 문제 ID ${question.id}`);
           
           // 재생 완료 후 버퍼에서 제거 (성공적으로 재생된 후에만)
           ttsBufferRef.current.delete(question.id);
@@ -502,7 +617,6 @@ function App() {
         // 생성된 TTS 재생
         setCurrentAudioUrl(audioUrl);
         const audio = new Audio(audioUrl);
-        audio.playbackRate = 1.2;
         currentAudioRef.current = audio;
         
         console.log(`🎵 우선순위 오디오 재생 시도: 문제 ID ${question.id}`);
@@ -515,7 +629,7 @@ function App() {
           });
           
           await audio.play();
-          console.log(`✅ 우선순위 TTS 재생 완료: 문제 ID ${question.id} (속도: 1.2x)`);
+          console.log(`✅ 우선순위 TTS 재생 완료: 문제 ID ${question.id}`);
         } catch (playError) {
           console.error(`❌ 우선순위 오디오 재생 실패: 문제 ID ${question.id}`, playError);
         }
@@ -535,7 +649,7 @@ function App() {
     } finally {
       setIsAudioLoading(false);
     }
-  }, [lastProcessedQuestionId, currentQuestionIndex, cleanupCurrentAudio, ttsBuffer, startSequentialBuffering]);
+  }, [lastProcessedQuestionId, currentQuestionIndex, currentAudioUrl, ttsBuffer, startSequentialBuffering, playBGM, setBGMVolume]);
 
   // 다음 문제로 넘어가기
   const goToNextQuestion = useCallback(() => {
@@ -558,32 +672,60 @@ function App() {
     setUserAnswer('');
     setIsCorrect(null);
     
-    // 현재 오디오 정리
-    cleanupCurrentAudio();
+    // 현재 TTS 오디오만 정리 (BGM은 유지)
+    console.log('🧹 TTS 오디오 정리 시작');
     
-    // 타이핑 애니메이션 시작 (완료 후 전환)
-    startTypingAnimation('다음문제', () => {
-      // 인덱스 이동 후 새로운 문제 가져오기
-      const nextIndex = currentQuestionIndex + 1 >= questionOrder.length ? 0 : currentQuestionIndex + 1;
-      setCurrentQuestionIndex(nextIndex);
-      
-      const nextQuestionId = questionOrder[nextIndex];
-      const newQuestion = quizQuestions.find(q => q.id === nextQuestionId);
-      
-      console.log(`🔄 다음 문제로 이동: 인덱스 ${currentQuestionIndex} → ${nextIndex}, 문제 ID ${nextQuestionId}`);
-      
-      setCurrentQuestion(newQuestion || null);
-      if (newQuestion) {
-        generateAndPlayTTS(newQuestion);
-      }
-      setTimeLeft(15);
-      setAnimationKey(prev => prev + 1);
-      setIsTransitioning(false);
-      setTransitionText('');
-      setIsProcessingNextQuestion(false);
-      isProcessingRef.current = false;
-    });
-  }, [currentQuestion, questionOrder, currentQuestionIndex, startTypingAnimation, generateAndPlayTTS, isTransitioning, isProcessingNextQuestion, cleanupCurrentAudio]);
+    // 현재 재생 중인 TTS 오디오 정지
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      console.log('🧹 현재 재생 중인 TTS 오디오 정지됨');
+    }
+    
+    // 진행 중인 TTS 요청 취소
+    if (currentTTSRequestRef.current) {
+      currentTTSRequestRef.current.abort();
+      currentTTSRequestRef.current = null;
+      console.log('🧹 진행 중인 TTS 요청 취소됨');
+    }
+    
+    // 오디오 URL 정리
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      setCurrentAudioUrl('');
+      console.log('🧹 TTS 오디오 URL 정리됨');
+    }
+    
+    // BGM 볼륨을 20%로 줄임 (중지하지 않음)
+    setBGMVolume(0.2);
+    
+          // 타이핑 애니메이션 시작 (완료 후 전환)
+      startTypingAnimation('다음문제', () => {
+        // 인덱스 이동 후 새로운 문제 가져오기
+        const nextIndex = currentQuestionIndex + 1 >= questionOrder.length ? 0 : currentQuestionIndex + 1;
+        setCurrentQuestionIndex(nextIndex);
+        
+        const nextQuestionId = questionOrder[nextIndex];
+        const newQuestion = quizQuestions.find(q => q.id === nextQuestionId);
+        
+        console.log(`🔄 다음 문제로 이동: 인덱스 ${currentQuestionIndex} → ${nextIndex}, 문제 ID ${nextQuestionId}`);
+        
+        setCurrentQuestion(newQuestion || null);
+        if (newQuestion) {
+          generateAndPlayTTS(newQuestion);
+        }
+        setTimeLeft(15);
+        setAnimationKey(prev => prev + 1);
+        setIsTransitioning(false);
+        setTransitionText('');
+        setIsProcessingNextQuestion(false);
+        isProcessingRef.current = false;
+        
+        // 문제 화면으로 돌아왔으므로 BGM 볼륨을 50%로 복구
+        setBGMVolume(0.5);
+      });
+  }, [currentQuestion, questionOrder, currentQuestionIndex, startTypingAnimation, generateAndPlayTTS, isTransitioning, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
 
   // 문제 제출
   const submitAnswer = useCallback(() => {
@@ -612,8 +754,33 @@ function App() {
       setUserAnswer('');
       setIsCorrect(null);
       
-      // 현재 오디오 정리
-      cleanupCurrentAudio();
+      // 현재 TTS 오디오만 정리 (BGM은 유지)
+      console.log('🧹 TTS 오디오 정리 시작');
+      
+      // 현재 재생 중인 TTS 오디오 정지
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+        currentAudioRef.current = null;
+        console.log('🧹 현재 재생 중인 TTS 오디오 정지됨');
+      }
+      
+      // 진행 중인 TTS 요청 취소
+      if (currentTTSRequestRef.current) {
+        currentTTSRequestRef.current.abort();
+        currentTTSRequestRef.current = null;
+        console.log('🧹 진행 중인 TTS 요청 취소됨');
+      }
+      
+      // 오디오 URL 정리
+      if (currentAudioUrl) {
+        URL.revokeObjectURL(currentAudioUrl);
+        setCurrentAudioUrl('');
+        console.log('🧹 TTS 오디오 URL 정리됨');
+      }
+      
+          // BGM 볼륨을 20%로 줄임 (중지하지 않음)
+    setBGMVolume(0.2);
       
       // 타이핑 애니메이션 시작 (완료 후 전환)
       startTypingAnimation('정답', () => {
@@ -636,12 +803,15 @@ function App() {
         setTransitionText('');
         setIsProcessingNextQuestion(false);
         isProcessingRef.current = false;
+        
+        // 문제 화면으로 돌아왔으므로 BGM 볼륨을 50%로 복구
+        setBGMVolume(0.5);
       });
     } else {
       setUserAnswer('');
       setIsCorrect(false);
     }
-  }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, cleanupCurrentAudio]);
+  }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
 
   // 이름 입력 시 엔터키 처리
   const handleNameKeyPress = useCallback((e: React.KeyboardEvent) => {
@@ -659,6 +829,9 @@ function App() {
       timerRef.current = null;
     }
     
+    // BGM 중지
+    stopBGM();
+    
     // 모든 리소스 정리
     cleanupAllResources();
     
@@ -669,7 +842,7 @@ function App() {
       timestamp: Date.now()
     };
     setRankings(prev => [...prev, newPlayer].sort((a, b) => b.score - a.score).slice(0, 10));
-  }, [playerName, score, cleanupAllResources]);
+  }, [playerName, score, cleanupAllResources, stopBGM]);
 
   // 랭킹 보기
   const showRankings = useCallback(() => {
@@ -678,11 +851,57 @@ function App() {
 
   // 시작 화면으로 돌아가기
   const goToStart = useCallback(() => {
-    // 모든 리소스 정리
-    cleanupAllResources();
+    // BGM 중지
+    stopBGM();
     
+    // TTS 오디오만 정리 (버퍼는 유지)
+    console.log('🧹 TTS 오디오 정리 시작');
+    
+    // 현재 재생 중인 TTS 오디오 정지
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+      console.log('🧹 현재 재생 중인 TTS 오디오 정지됨');
+    }
+    
+    // 진행 중인 TTS 요청 취소
+    if (currentTTSRequestRef.current) {
+      currentTTSRequestRef.current.abort();
+      currentTTSRequestRef.current = null;
+      console.log('🧹 진행 중인 TTS 요청 취소됨');
+    }
+    
+    // 오디오 URL 정리
+    if (currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      setCurrentAudioUrl('');
+      console.log('🧹 TTS 오디오 URL 정리됨');
+    }
+    
+    // 게임 상태 초기화
     setGameState('start');
-  }, [cleanupAllResources]);
+    setCurrentQuestion(null);
+    setUserAnswer('');
+    setIsCorrect(null);
+    setAnimationKey(0);
+    setTimeLeft(15);
+    setGameTimeLeft(120);
+    setScore(0);
+    setCurrentQuestionIndex(0);
+    setLastProcessedQuestionId(null);
+    setIsProcessingNextQuestion(false);
+    isProcessingRef.current = false;
+    
+    // 문제 순서 초기화 (새로운 게임을 위해)
+    setQuestionOrder([]);
+    
+    // 버퍼 초기화 (새로운 게임을 위해)
+    ttsBufferRef.current.clear();
+    setTtsBuffer(new Map());
+    
+    console.log('🔄 시작 화면으로 이동 완료, 초기 버퍼링 준비');
+  }, [currentAudioUrl, stopBGM]);
 
   // 키보드 이벤트 처리
   useEffect(() => {
@@ -690,6 +909,10 @@ function App() {
       if (gameState === 'playing') {
         if (e.key === 'Enter') {
           submitAnswer();
+        }
+      } else if (gameState === 'gameOver') {
+        if (e.key === 'Enter') {
+          goToStart();
         }
       }
     };
@@ -803,14 +1026,14 @@ function App() {
 
   // 첫 화면에서 초기 버퍼링 시작
   useEffect(() => {
-    if (gameState === 'start' && questionOrder.length === 0) {
+    if (gameState === 'start' && questionOrder.length === 0 && !isBuffering) {
       console.log('🎯 첫 화면에서 초기 버퍼링 시작');
       // 약간의 지연 후 초기 버퍼링 시작 (페이지 로드 완료 후)
       setTimeout(() => {
         startInitialBuffering();
       }, 500);
     }
-  }, [gameState, questionOrder.length, startInitialBuffering]);
+  }, [gameState, questionOrder.length, isBuffering, startInitialBuffering]);
 
   // 게임 중 입력창 포커스 유지
   useEffect(() => {
@@ -967,15 +1190,31 @@ function App() {
               <p>최종 점수: <span className="score-highlight">{score}점</span></p>
               <p>플레이어: {playerName || '익명'}</p>
             </div>
+            
+            {/* 랭킹 표시 */}
+            <div className="ranking-section">
+              <h3>🏆 현재 랭킹</h3>
+              <div className="rankings-preview">
+                {rankings.length === 0 ? (
+                  <p>아직 기록이 없습니다.</p>
+                ) : (
+                  rankings.slice(0, 5).map((player, index) => (
+                    <div key={player.timestamp} className={`ranking-preview-item ${player.name === (playerName || '익명') && player.score === score ? 'current-player' : ''}`}>
+                      <span className="rank">#{index + 1}</span>
+                      <span className="player-name">{player.name}</span>
+                      <span className="player-score">{player.score}점</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            
             <div className="game-over-buttons">
               <button onClick={() => {
                 setPlayerName('');
-                startGame();
+                goToStart();
               }} className="restart-btn">
                 다시 시작
-              </button>
-              <button onClick={showRankings} className="ranking-btn">
-                랭킹 보기
               </button>
             </div>
           </div>
