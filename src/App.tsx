@@ -985,11 +985,6 @@ function App() {
     setRankings(prev => [...prev, newPlayer].sort((a, b) => b.score - a.score).slice(0, 10));
   }, [playerName, score, cleanupAllResources, stopBGM]);
 
-  // 랭킹 보기
-  const showRankings = useCallback(() => {
-    setGameState('ranking');
-  }, []);
-
   // 시작 화면으로 돌아가기
   const goToStart = useCallback(() => {
     // BGM 중지
