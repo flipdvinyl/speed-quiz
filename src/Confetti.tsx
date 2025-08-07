@@ -30,7 +30,7 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
     x,
     y,
     vx: (Math.random() - 0.5) * 8,
-    vy: Math.random() * -15 - 5,
+    vy: Math.random() * -45 - 15, // 위로 3배 높이 튀어오르게 수정
     rotation: Math.random() * 360,
     rotationSpeed: (Math.random() - 0.5) * 10,
     color: colors[Math.floor(Math.random() * colors.length)],
@@ -50,7 +50,7 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
 
     // 콘페티 조각들 생성
     piecesRef.current = [];
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 1000; i++) {
       const x = Math.random() * canvas.width;
       const y = canvas.height + 10;
       piecesRef.current.push(createConfettiPiece(x, y));
