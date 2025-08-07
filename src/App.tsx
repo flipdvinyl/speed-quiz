@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { QuizQuestion, Player, GameState } from './types';
 import { quizQuestions } from './data';
+import Confetti from './Confetti';
 import './App.css';
 
 // 목소리 목록 정의
@@ -97,6 +98,7 @@ function App() {
   const [timeLeft, setTimeLeft] = useState(15);
   const [gameTimeLeft, setGameTimeLeft] = useState(120);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [rankings, setRankings] = useState<Player[]>([]);
   const [animationKey, setAnimationKey] = useState(0);
@@ -749,6 +751,15 @@ function App() {
 
     if (isAnswerCorrect) {
       console.log(`✅ 정답 제출: 문제 ID ${currentQuestion.id}`);
+      
+      // 콘페티 애니메이션 시작
+      setShowConfetti(true);
+      
+      // 3초 후 콘페티 숨기기
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 3000);
+      
       // 남은 초의 앞자리 수로 점수 계산
       const timeScore = Math.floor(timeLeft);
       setScore(prev => prev + timeScore);
@@ -1054,6 +1065,9 @@ function App() {
 
   return (
     <div className="app">
+      {/* 콘페티 애니메이션 */}
+      <Confetti isActive={showConfetti} duration={3000} />
+      
       <div className="container">
         {gameState === 'playing' && (
           <div className="quiz-title-fixed">
