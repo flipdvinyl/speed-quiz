@@ -99,6 +99,7 @@ function App() {
   const [gameTimeLeft, setGameTimeLeft] = useState(120);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playerName, setPlayerName] = useState('');
   const [rankings, setRankings] = useState<Player[]>([]);
   const [animationKey, setAnimationKey] = useState(0);
@@ -752,13 +753,25 @@ function App() {
     if (isAnswerCorrect) {
       console.log(`✅ 정답 제출: 문제 ID ${currentQuestion.id}`);
       
-      // 콘페티 애니메이션 시작
-      setShowConfetti(true);
+      // 콘페티 애니메이션 강제 재시작 (이전 애니메이션이 진행 중이어도)
+      setShowConfetti(false);
       
-      // 3초 후 콘페티 숨기기
-      setTimeout(() => {
-        setShowConfetti(false);
-      }, 3000);
+      // 다음 프레임에서 새로운 애니메이션 시작
+      requestAnimationFrame(() => {
+        setShowConfetti(true);
+        
+        // 이전 타이머가 있다면 정리
+        if (confettiTimerRef.current) {
+          clearTimeout(confettiTimerRef.current);
+        }
+        
+        // 5초 후 콘페티 숨기기 (타이머 ID 저장)
+        const confettiTimer = setTimeout(() => {
+          setShowConfetti(false);
+        }, 5000);
+        
+        confettiTimerRef.current = confettiTimer;
+      });
       
       // 남은 초의 앞자리 수로 점수 계산
       const timeScore = Math.floor(timeLeft);
@@ -1066,7 +1079,7 @@ function App() {
   return (
     <div className="app">
       {/* 콘페티 애니메이션 */}
-      <Confetti isActive={showConfetti} duration={3000} />
+      <Confetti isActive={showConfetti} duration={5000} />
       
       <div className="container">
         {gameState === 'playing' && (

@@ -16,7 +16,7 @@ interface ConfettiPiece {
   size: number;
 }
 
-const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
+const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 5000 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number | undefined>(undefined);
   const piecesRef = useRef<ConfettiPiece[]>([]);
@@ -29,12 +29,12 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
   const createConfettiPiece = (x: number, y: number): ConfettiPiece => ({
     x,
     y,
-    vx: (Math.random() - 0.5) * 8,
-    vy: Math.random() * -45 - 15, // 위로 3배 높이 튀어오르게 수정
+    vx: (Math.random() - 0.5) * 12, // 속도 1.5배 증가
+    vy: Math.random() * -27 - 9, // 위로 높이를 2/3로 조정 (속도에 맞춰)
     rotation: Math.random() * 360,
     rotationSpeed: (Math.random() - 0.5) * 10,
     color: colors[Math.floor(Math.random() * colors.length)],
-    size: Math.random() * 8 + 4
+    size: (Math.random() * 8 + 4) * 2.8 // 크기를 70%로 조정
   });
 
   const initConfetti = () => {
@@ -52,7 +52,7 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
     piecesRef.current = [];
     for (let i = 0; i < 1000; i++) {
       const x = Math.random() * canvas.width;
-      const y = canvas.height + 10;
+      const y = canvas.height + 30; // 아래쪽으로 20px 이동 (10 + 20)
       piecesRef.current.push(createConfettiPiece(x, y));
     }
   };
@@ -90,9 +90,9 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
       ctx.translate(piece.x, piece.y);
       ctx.rotate((piece.rotation * Math.PI) / 180);
       
-      // 사각형 모양의 콘페티
+      // 직사각형 모양의 콘페티 (가로 비율을 절반으로)
       ctx.fillStyle = piece.color;
-      ctx.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size);
+      ctx.fillRect(-piece.size / 2, -piece.size / 2, piece.size / 2, piece.size);
       
       ctx.restore();
     });
@@ -105,6 +105,11 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
 
   useEffect(() => {
     if (isActive) {
+      // 기존 애니메이션 정리
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      
       initConfetti();
       animate();
 
@@ -121,6 +126,11 @@ const Confetti: React.FC<ConfettiProps> = ({ isActive, duration = 3000 }) => {
           cancelAnimationFrame(animationRef.current);
         }
       };
+    } else {
+      // 비활성화 시 애니메이션 정리
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
     }
   }, [isActive, duration]);
 
