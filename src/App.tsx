@@ -27,14 +27,47 @@ const getRandomVoice = () => {
   return voiceList[randomIndex];
 };
 
+// 문장 분석 함수 - TTS용 텍스트와 화면 표시용 텍스트 분리
+const analyzeText = (text: string): { ttsText: string; displayText: string } => {
+  // 단어A::단어B:: 패턴 찾기 (OOOO::땡땡땡땡:: 형식)
+  const pattern = /([A-Z]+)::([^:]+)::/g;
+  let ttsText = text;
+  let displayText = text;
+  
+  console.log('🔍 analyzeText 입력:', text);
+  
+  // 모든 패턴을 찾아서 처리
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const fullMatch = match[0]; // 전체 매치 (단어A::단어B::)
+    const displayWord = match[1]; // 화면 표시용 (단어A)
+    const ttsWord = match[2]; // TTS 발화용 (단어B)
+    
+    console.log('🔍 패턴 발견:', { fullMatch, displayWord, ttsWord });
+    
+    // TTS 텍스트에서 전체 패턴을 TTS 단어로 교체
+    ttsText = ttsText.replace(fullMatch, ttsWord);
+    
+    // 화면 표시 텍스트에서 전체 패턴을 화면 표시 단어로 교체
+    displayText = displayText.replace(fullMatch, displayWord);
+  }
+  
+  console.log('🔍 analyzeText 결과:', { ttsText, displayText });
+  
+  return { ttsText, displayText };
+};
+
 // TTS API 호출 함수
 const generateTTS = async (text: string, abortController?: AbortController): Promise<string> => {
   try {
+    // 문장 분석하여 TTS용 텍스트 추출
+    const { ttsText } = analyzeText(text);
+    
     // 랜덤 목소리 선택
     const randomVoice = getRandomVoice();
     
     const requestBody = {
-      text: text,
+      text: ttsText, // 분석된 TTS용 텍스트 사용
       voice_id: randomVoice.id,
       style: randomVoice.style,
       voice_settings: {
@@ -101,13 +134,27 @@ function App() {
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playerName, setPlayerName] = useState('');
+  const [showNameError, setShowNameError] = useState(false);
   const [rankings, setRankings] = useState<Player[]>([]);
+  const [rankingScrollIndex, setRankingScrollIndex] = useState(0);
   const [animationKey, setAnimationKey] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionText, setTransitionText] = useState('');
   const [typingText, setTypingText] = useState('');
   const [typingPhase, setTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
   const [visibleCharCount, setVisibleCharCount] = useState(0);
+  const [descriptionTypingText, setDescriptionTypingText] = useState('');
+  const [descriptionTypingPhase, setDescriptionTypingPhase] = useState<'typing' | 'none'>('none');
+  const [descriptionVisibleCharCount, setDescriptionVisibleCharCount] = useState(0);
+  const [startScreenTypingText, setStartScreenTypingText] = useState('');
+  const [startScreenTypingPhase, setStartScreenTypingPhase] = useState<'typing' | 'hold' | 'deleting' | 'none'>('none');
+  const [startScreenVisibleCharCount, setStartScreenVisibleCharCount] = useState(0);
+  const startScreenTypingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startScreenDeletingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const startScreenHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startScreenInputRef = useRef<HTMLInputElement>(null);
+  const startScreenAnimationRef = useRef<boolean>(false);
+  const escapeKeyRef = useRef<boolean>(false);
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string>('');
   const answerInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -303,8 +350,8 @@ function App() {
     setIsBuffering(true);
     console.log('🚀 순차적 TTS 버퍼링 시작');
     
-    // 현재 인덱스부터 최소 3개 문제를 버퍼링
-    const bufferCount = Math.min(3, questionOrder.length);
+    // 현재 인덱스부터 최소 10개 문제를 버퍼링
+    const bufferCount = Math.min(10, questionOrder.length);
     const bufferedUrls = new Map<number, string>();
     
     // 동기적으로 현재 버퍼 상태 확인
@@ -371,8 +418,8 @@ function App() {
     isBufferingRef.current = true;
     setIsBuffering(true);
     
-    // 처음 5개 문제를 미리 버퍼링
-    const bufferCount = Math.min(5, initialQuestionOrder.length);
+    // 처음 10개 문제를 미리 버퍼링
+    const bufferCount = Math.min(10, initialQuestionOrder.length);
     const bufferedUrls = new Map<number, string>();
     
     console.log(`📊 초기 버퍼링 대상: ${bufferCount}개 문제`);
@@ -480,6 +527,62 @@ function App() {
       }
     }, 100); // 타이핑 속도
   }, []);
+
+  // 문제 설명 타이핑 애니메이션 함수
+  const startDescriptionTypingAnimation = useCallback((text: string) => {
+    setDescriptionTypingPhase('typing');
+    setDescriptionTypingText(text);
+    setDescriptionVisibleCharCount(0);
+    
+    // 타이핑 애니메이션 (더 빠른 속도)
+    let currentIndex = 0;
+    const typingInterval = setInterval(() => {
+      if (currentIndex < text.length) {
+        setDescriptionVisibleCharCount(currentIndex + 1);
+        currentIndex++;
+      } else {
+        clearInterval(typingInterval);
+        setDescriptionTypingPhase('none');
+      }
+    }, 30); // 타이핑 속도 (더 빠름)
+  }, []);
+
+  // 시작 화면 타이핑 애니메이션 함수
+  const startScreenTypingAnimation = useCallback((text: string, onComplete?: () => void) => {
+    console.log('🎬 타이핑 애니메이션 시작:', text);
+    
+    // 이전 타이머 정리
+    if (startScreenTypingTimerRef.current) {
+      clearInterval(startScreenTypingTimerRef.current);
+      startScreenTypingTimerRef.current = null;
+    }
+    
+    // 상태 초기화
+    setStartScreenTypingPhase('typing');
+    setStartScreenTypingText(text);
+    setStartScreenVisibleCharCount(0);
+    
+    // 타이핑 애니메이션
+    let currentIndex = 0;
+    const typingInterval = setInterval(() => {
+      if (currentIndex < text.length) {
+        setStartScreenVisibleCharCount(currentIndex + 1);
+        currentIndex++;
+      } else {
+        clearInterval(typingInterval);
+        startScreenTypingTimerRef.current = null;
+        console.log('✅ 타이핑 완료');
+        // 애니메이션 완료 후 콜백 실행
+        if (onComplete) {
+          onComplete();
+        }
+      }
+    }, 25); // 타이핑 속도 (2배 빠름)
+    
+    startScreenTypingTimerRef.current = typingInterval;
+  }, []);
+
+
 
   // 각 글자별 애니메이션 시간 계산 함수
   const calculateCharacterAnimationTimes = useCallback((word: string) => {
@@ -721,6 +824,8 @@ function App() {
         setCurrentQuestion(newQuestion || null);
         if (newQuestion) {
           generateAndPlayTTS(newQuestion);
+          // 문제 설명 타이핑 애니메이션 시작
+          startDescriptionTypingAnimation(analyzeText(newQuestion.description).displayText);
         }
         setTimeLeft(15);
         setAnimationKey(prev => prev + 1);
@@ -732,7 +837,7 @@ function App() {
         // 문제 화면으로 돌아왔으므로 BGM 볼륨을 50%로 복구
         setBGMVolume(0.5);
       });
-  }, [currentQuestion, questionOrder, currentQuestionIndex, startTypingAnimation, generateAndPlayTTS, isTransitioning, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
+  }, [currentQuestion, questionOrder, currentQuestionIndex, startTypingAnimation, startDescriptionTypingAnimation, generateAndPlayTTS, isTransitioning, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
 
   // 문제 제출
   const submitAnswer = useCallback(() => {
@@ -824,6 +929,8 @@ function App() {
         setCurrentQuestion(newQuestion || null);
         if (newQuestion) {
           generateAndPlayTTS(newQuestion);
+          // 문제 설명 타이핑 애니메이션 시작
+          startDescriptionTypingAnimation(analyzeText(newQuestion.description).displayText);
         }
         setTimeLeft(15);
         setAnimationKey(prev => prev + 1);
@@ -839,13 +946,18 @@ function App() {
       setUserAnswer('');
       setIsCorrect(false);
     }
-  }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
+  }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, startDescriptionTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
 
   // 이름 입력 시 엔터키 처리
   const handleNameKeyPress = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && playerName.trim()) {
-      playSilentAudio();
-      startGame();
+    if (e.key === 'Enter') {
+      if (playerName.trim()) {
+        setShowNameError(false);
+        playSilentAudio();
+        startGame();
+      } else {
+        setShowNameError(true);
+      }
     }
   }, [playerName, startGame]);
 
@@ -864,6 +976,7 @@ function App() {
     cleanupAllResources();
     
     setGameState('gameOver');
+    setRankingScrollIndex(0);
     const newPlayer: Player = {
       name: playerName || '익명',
       score,
@@ -921,6 +1034,35 @@ function App() {
     setIsProcessingNextQuestion(false);
     isProcessingRef.current = false;
     
+    // 시작 화면 타이핑 애니메이션 초기화
+    if (startScreenTypingTimerRef.current) {
+      clearInterval(startScreenTypingTimerRef.current);
+      startScreenTypingTimerRef.current = null;
+    }
+    if (startScreenDeletingTimerRef.current) {
+      clearInterval(startScreenDeletingTimerRef.current);
+      startScreenDeletingTimerRef.current = null;
+    }
+    if (startScreenHoldTimerRef.current) {
+      clearTimeout(startScreenHoldTimerRef.current);
+      startScreenHoldTimerRef.current = null;
+    }
+    
+    // 모든 타이머 강제 정리
+    const highestTimeoutId = setTimeout(";");
+    for (let i = 0; i < highestTimeoutId; i++) {
+      clearTimeout(i);
+    }
+    const highestIntervalId = setInterval(";");
+    for (let i = 0; i < highestIntervalId; i++) {
+      clearInterval(i);
+    }
+    
+    setStartScreenTypingPhase('none');
+    setStartScreenTypingText('');
+    setStartScreenVisibleCharCount(0);
+    startScreenAnimationRef.current = false;
+    
     // 문제 순서 초기화 (새로운 게임을 위해)
     setQuestionOrder([]);
     
@@ -948,7 +1090,13 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        goToStart();
+        if (!escapeKeyRef.current) {
+          escapeKeyRef.current = true;
+          goToStart();
+          setTimeout(() => {
+            escapeKeyRef.current = false;
+          }, 500);
+        }
       } else if (gameState === 'playing') {
         if (e.key === 'ArrowRight') {
           e.preventDefault();
@@ -959,6 +1107,15 @@ function App() {
         } else if (e.key === 'ArrowDown') {
           e.preventDefault();
           setGameTimeLeft(prev => Math.max(prev - 10, 10)); // 최소 10초
+        }
+      } else if (gameState === 'gameOver') {
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setRankingScrollIndex(prev => Math.max(0, prev - 1));
+        } else if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const maxScrollIndex = Math.max(0, Math.ceil(rankings.length / 3) - 1);
+          setRankingScrollIndex(prev => Math.min(maxScrollIndex, prev + 1));
         }
       }
     };
@@ -1032,13 +1189,16 @@ function App() {
         console.log(`📊 현재 버퍼 상태: ${ttsBuffer.size}개 항목`);
         setCurrentQuestion(firstQuestion);
         
+        // 첫 번째 문제 설명 타이핑 애니메이션 즉시 시작
+        startDescriptionTypingAnimation(analyzeText(firstQuestion.description).displayText);
+        
         // 초기 버퍼링이 완료되었을 가능성이 높으므로 짧은 대기 후 TTS 재생
         setTimeout(() => {
           generateAndPlayTTS(firstQuestion);
         }, 500); // 초기 버퍼링을 고려하여 대기 시간 단축
       }
     }
-  }, [gameState, currentQuestion, questionOrder, generateAndPlayTTS, ttsBuffer]);
+  }, [gameState, currentQuestion, questionOrder, generateAndPlayTTS, startDescriptionTypingAnimation, ttsBuffer]);
 
   // 시작 화면에서 이름 입력칸에 포커스 설정
   useEffect(() => {
@@ -1062,6 +1222,94 @@ function App() {
       }, 500);
     }
   }, [gameState, questionOrder.length, isBuffering, startInitialBuffering]);
+
+
+
+  // 시작 화면에서 첫 번째 랜덤 문제 뿌리기
+  useEffect(() => {
+    if (gameState === 'start' && startScreenTypingPhase === 'none' && startScreenTypingText === '' && !startScreenAnimationRef.current) {
+      // 중복 실행 방지
+      startScreenAnimationRef.current = true;
+      
+      // 랜덤 문제 선택
+      const randomIndex = Math.floor(Math.random() * quizQuestions.length);
+      const randomQuestion = quizQuestions[randomIndex];
+      const displayText = analyzeText(randomQuestion.description).displayText;
+      
+      console.log('🎬 첫 번째 랜덤 문제 뿌리기 (인덱스:', randomIndex, '):', displayText);
+      
+      // 타이핑 애니메이션 시작
+      startScreenTypingAnimation(displayText, () => {
+        console.log('✅ 문제 표시 완료');
+        // 1초 후 다음 문제 준비
+        setTimeout(() => {
+          // 상태를 초기화하여 다음 문제가 뿌려지도록 함
+          setStartScreenTypingPhase('none');
+          setStartScreenTypingText('');
+          setStartScreenVisibleCharCount(0);
+          // 다음 애니메이션 허용
+          startScreenAnimationRef.current = false;
+        }, 1000);
+      });
+    }
+    
+    // cleanup 함수: 게임 상태가 변경되거나 컴포넌트 언마운트 시 타이머 정리
+    return () => {
+      if (gameState !== 'start') {
+        startScreenAnimationRef.current = false;
+      }
+    };
+  }, [gameState, startScreenTypingPhase, startScreenTypingAnimation]);
+
+  // 시작 화면 진입 시 플레이어 이름 초기화
+  useEffect(() => {
+    if (gameState === 'start') {
+      setPlayerName('');
+      setShowNameError(false);
+    }
+  }, [gameState]);
+
+  // 시작 화면에서 입력 박스 포커스 유지
+  useEffect(() => {
+    if (gameState === 'start' && startScreenInputRef.current) {
+      // 즉시 포커스 설정
+      startScreenInputRef.current.focus();
+      
+      const interval = setInterval(() => {
+        if (startScreenInputRef.current && document.activeElement !== startScreenInputRef.current) {
+          startScreenInputRef.current.focus();
+        }
+      }, 100);
+
+      return () => clearInterval(interval);
+    }
+  }, [gameState]);
+
+  // 게임 종료 화면에서 콘페티 반복
+  useEffect(() => {
+    if (gameState === 'gameOver') {
+      // 즉시 첫 번째 콘페티 시작
+      setShowConfetti(true);
+      
+      // 3초 간격으로 콘페티 반복
+      const confettiInterval = setInterval(() => {
+        setShowConfetti(false);
+        setTimeout(() => {
+          setShowConfetti(true);
+        }, 100);
+      }, 3000);
+
+      return () => {
+        clearInterval(confettiInterval);
+        setShowConfetti(false);
+      };
+    } else {
+      // 게임 종료가 아닐 때는 콘페티 중지
+      setShowConfetti(false);
+    }
+  }, [gameState]);
+
+
 
   // 게임 중 입력창 포커스 유지
   useEffect(() => {
@@ -1089,37 +1337,109 @@ function App() {
           </div>
         )}
         {gameState !== 'playing' && (
-          <div className="title-container">
+          <div className="quiz-title-fixed">
             <div className="subtitle">수퍼톤 TTS로 듣고 풀어보는</div>
             <h1 className="title">광고 상식 스피드 퀴즈</h1>
           </div>
         )}
         
         {gameState === 'start' && (
-          <div className="start-screen">
-            <h2>광고 산업 상식 퀴즈</h2>
-            <p>2분 동안 최대한 많은 광고 용어를 맞춰보세요!</p>
+          <div className="game-screen">
+            {/* 게임 정보 영역 숨김 */}
+            <div className="game-info" style={{ visibility: 'hidden' }}>
+              <div className="timer">
+                <div className="timer-label">남은 시간</div>
+                <div className="timer-value">--</div>
+                <span className="timer-unit">초</span>
+              </div>
+              <div className="score">
+                <div className="score-label">내 점수</div>
+                <div className="score-value">--</div>
+                <span className="score-unit">점</span>
+              </div>
+            </div>
+            
+            {/* 시작 화면 타이핑 애니메이션 */}
+            <div className="question-container">
+              <div className="description-container" style={{ minHeight: '40vh', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '0vh' }}>
+                <div className="description" style={{ 
+                  fontSize: '5vw',
+                  padding: '0 5%', 
+                  textAlign: 'center',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  maxWidth: '100%'
+                }}>
+                  {startScreenTypingPhase === 'typing' ? 
+                    startScreenTypingText.split('').map((char, index) => {
+                      const isEmoji = /\p{Emoji}/u.test(char);
+                      return (
+                        <span 
+                          key={index} 
+                          style={{ 
+                            opacity: index < startScreenVisibleCharCount ? 1 : 0
+                          }}
+                          className={isEmoji ? 'emoji-char' : ''}
+                        >
+                          {char}
+                          {index === startScreenVisibleCharCount - 1 && <span className="typing-cursor">|</span>}
+                        </span>
+                      );
+                    }) : 
+                    <>
+                      {startScreenTypingText}
+                      <span className="typing-cursor" style={{ opacity: 0 }}>|</span>
+                    </>
+                  }
+                </div>
+              </div>
+
+              {/* 문제 화면과 같은 위치의 입력 영역 */}
+              <div className="answer-section">
+                <div className="keyboard-hints">
+                  <span>게임시작: Enter</span>
+                </div>
+                <div className="answer-input">
+                  <input
+                    ref={startScreenInputRef}
+                    type="text"
+                    placeholder="이름을 입력하세요"
+                    value={playerName}
+                    onChange={(e) => {
+                      setPlayerName(e.target.value);
+                      if (showNameError) {
+                        setShowNameError(false);
+                      }
+                    }}
+                    onKeyPress={handleNameKeyPress}
+                    className={`answer-field ${showNameError ? 'error-placeholder' : ''}`}
+                    style={{
+                      color: playerName.trim() === '' ? '#999' : 'black'
+                    }}
+                    autoFocus
+                  />
+                </div>
+                <div className="description-container">
+                  <div className="description">
+                    광고 상식 퀴즈에 도전하고 경품을 받아가세요!
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             {isBuffering && (
               <div className="buffering-status">
-                <p>🎵 오디오 준비 중... ({ttsBuffer.size}개 완료)</p>
+                <span style={{ 
+                  position: 'fixed', 
+                  bottom: '10px', 
+                  right: '20px', 
+                  opacity: 0.5,
+                  fontSize: 'inherit'
+                }}>
+                  {ttsBuffer.size}
+                </span>
               </div>
             )}
-            <div className="input-group">
-              <input
-                type="text"
-                placeholder="플레이어 이름을 입력하세요"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                onKeyPress={handleNameKeyPress}
-                className="name-input"
-              />
-            </div>
-            <button onClick={startGame} className="start-btn">
-              게임 시작
-            </button>
-            <button onClick={showRankings} className="ranking-btn">
-              랭킹 보기
-            </button>
           </div>
         )}
 
@@ -1206,7 +1526,30 @@ function App() {
                     />
                   </div>
                   <div className="description-container">
-                    <div className="description">“ {currentQuestion.description} ”</div>
+                    <div className="description">
+                      {
+                        descriptionTypingPhase === 'typing' ? 
+                        descriptionTypingText.split('').map((char, index) => {
+                          const isEmoji = /\p{Emoji}/u.test(char);
+                          return (
+                            <span 
+                              key={index} 
+                              style={{ 
+                                opacity: index < descriptionVisibleCharCount ? 1 : 0
+                              }}
+                              className={isEmoji ? 'emoji-char' : ''}
+                            >
+                              {char}
+                              {index === descriptionVisibleCharCount - 1 && <span className="typing-cursor">|</span>}
+                            </span>
+                          );
+                        }) : 
+                        <>
+                          {analyzeText(currentQuestion.description).displayText}
+                          <span className="typing-cursor" style={{ opacity: 0 }}>|</span>
+                        </>
+                      }
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1215,38 +1558,91 @@ function App() {
         )}
 
         {gameState === 'gameOver' && (
-          <div className="game-over-screen">
-            <h2>게임 종료!</h2>
-            <div className="final-score">
-              <p>최종 점수: <span className="score-highlight">{score}점</span></p>
-              <p>플레이어: {playerName || '익명'}</p>
-            </div>
-            
-            {/* 랭킹 표시 */}
-            <div className="ranking-section">
-              <h3>🏆 현재 랭킹</h3>
-              <div className="rankings-preview">
-                {rankings.length === 0 ? (
-                  <p>아직 기록이 없습니다.</p>
-                ) : (
-                  rankings.slice(0, 5).map((player, index) => (
-                    <div key={player.timestamp} className={`ranking-preview-item ${player.name === (playerName || '익명') && player.score === score ? 'current-player' : ''}`}>
-                      <span className="rank">#{index + 1}</span>
-                      <span className="player-name">{player.name}</span>
-                      <span className="player-score">{player.score}점</span>
-                    </div>
-                  ))
-                )}
+          <div className="game-screen">
+            {/* 빈 게임 정보 영역 (위치 맞추기용) */}
+            <div className="game-info" style={{ visibility: 'hidden' }}>
+              <div className="timer">
+                <div className="timer-label">남은 시간</div>
+                <div className="timer-value">--</div>
+                <span className="timer-unit">초</span>
+              </div>
+              <div className="score">
+                <div className="score-label">내 점수</div>
+                <div className="score-value">--</div>
+                <span className="score-unit">점</span>
               </div>
             </div>
             
-            <div className="game-over-buttons">
-              <button onClick={() => {
-                setPlayerName('');
-                goToStart();
-              }} className="restart-btn">
-                다시 시작
-              </button>
+            {/* 게임 종료 제목 */}
+            <div style={{ minHeight: '20vh', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-10vh' }}>
+              <div className="description" style={{ 
+                fontSize: '6vw',
+                padding: '0 5%', 
+                textAlign: 'center',
+                wordWrap: 'break-word',
+                whiteSpace: 'pre-wrap',
+                maxWidth: '100%'
+              }}>
+                게임종료!
+              </div>
+            </div>
+
+            {/* 게임 종료 정보 (좌중우 3개 셀로 분할) */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '0 5%', width: '100%', minHeight: '40vh', marginTop: '5vh', marginBottom: '5vh' }}>
+              {/* 좌측 셀 - 최종 점수 */}
+              <div style={{ width: '33%', textAlign: 'left', padding: '0 10px' }}>
+                <div className="description" style={{ 
+                  fontSize: '4vw',
+                  textAlign: 'left',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {playerName || '익명'}님의{'\n'}최종 점수는{'\n'}{score}점 입니다!
+                </div>
+              </div>
+
+              {/* 중앙 셀 - 최종 등수 */}
+              <div style={{ width: '33%', textAlign: 'left', padding: '0 10px' }}>
+                <div className="description" style={{ 
+                  fontSize: '4vw',
+                  textAlign: 'left',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {playerName || '익명'}님은{'\n'}{rankings.length}명 중{'\n'}{rankings.findIndex(p => p.name === (playerName || '익명') && p.score === score) + 1}등 입니다!
+                </div>
+              </div>
+
+              {/* 우측 셀 - 랭킹 */}
+              <div style={{ width: '33%', textAlign: 'left', padding: '0 10px' }}>
+                <div className="description" style={{ 
+                  fontSize: '3vw',
+                  textAlign: 'left',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  maxHeight: '30vh',
+                  overflowY: 'hidden'
+                }}>
+                  {rankings.slice(rankingScrollIndex * 3, (rankingScrollIndex + 1) * 3).map((player, index) => (
+                    <div key={player.timestamp} style={{ marginBottom: '10px' }}>
+                      {rankingScrollIndex * 3 + index + 1}위 {player.name}님 {player.score}점
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 단축키 안내 */}
+            <div className="answer-section">
+              <div className="keyboard-hints">
+                <span>다시시작: Enter</span>
+              </div>
+              <div className="answer-input">
+                {/* 빈 입력 영역 (위치 맞추기용) */}
+              </div>
+              <div className="description-container">
+                {/* 빈 설명 영역 (위치 맞추기용) */}
+              </div>
             </div>
           </div>
         )}

@@ -328,6 +328,10 @@
   color: #e53e3e;
 }
 
+.answer-field.error-placeholder::placeholder {
+  color: red !important;
+}
+
 .keyboard-hints {
   margin-top: calc(15px - 1vh);
   padding: 0px;
