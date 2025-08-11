@@ -10,4 +10,4 @@ export interface Player {
   timestamp: number;
 }
 
-export type GameState = 'start' | 'playing' | 'gameOver' | 'ranking'; 
+export type GameState = 'start' | 'intro' | 'playing' | 'gameOver' | 'ranking'; 

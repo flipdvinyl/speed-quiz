@@ -21,6 +21,14 @@ const voiceList = [
   { id: '7f8873011eeba6f11b750f', name: 'Ken', style: 'angry', speed: 1.2 }
 ];
 
+// 게임 안내 문장들
+const gameIntroSentences = [
+  "님 수퍼톤의 광고 상식 스피드 퀴즈에 도전해주셔서 감사합니다!",
+  "이 게임은 2분동안 목소리로 제공하는 스피드 퀴즈를 최대한 빠르게 많이 맞추는 퀴즈 입니다.",
+  "이 게임에 사용된 모든 목소리는 수퍼톤의 TTS기능을 사용해 수퍼톤이 보유한 캐릭터들이 발화한 목소리 입니다.",
+  "답변은 한국어로만 입력하면 됩니다. 그럼 게임도 즐기고 수퍼톤의 생동감 있는 TTS도 즐겨보세요. 경품도 마련되어 있답니다. 그럼 시작!"
+];
+
 // 랜덤 목소리 선택 함수
 const getRandomVoice = () => {
   const randomIndex = Math.floor(Math.random() * voiceList.length);
@@ -158,6 +166,18 @@ function App() {
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string>('');
   const answerInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
+  // 안내 페이지 관련 상태
+  const [introCurrentSentence, setIntroCurrentSentence] = useState(0);
+  const [introIsPlaying, setIntroIsPlaying] = useState(false);
+  const [introCurrentAudio, setIntroCurrentAudio] = useState<HTMLAudioElement | null>(null);
+  const introAudioRef = useRef<HTMLAudioElement | null>(null);
+  const introSkipRef = useRef<boolean>(false); // 안내 페이지 스킵 방지용
+  const introEnterBlockRef = useRef<boolean>(false); // Enter 키 입력 차단용
+  const [introTypingProgress, setIntroTypingProgress] = useState(0); // 타이핑 진행도
+  const introTTSRequestRef = useRef<AbortController | null>(null); // TTS 요청 취소용
+  const [introTTSBuffer, setIntroTTSBuffer] = useState<Map<number, string>>(new Map()); // TTS 버퍼
+  const introTTSBufferRef = useRef<Map<number, string>>(new Map()); // 동기적 버퍼 참조
   const [questionOrder, setQuestionOrder] = useState<number[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [lastProcessedQuestionId, setLastProcessedQuestionId] = useState<number | null>(null);
@@ -444,9 +464,399 @@ function App() {
     console.log(`✅ 초기 TTS 버퍼링 완료. 버퍼된 항목: [${Array.from(bufferedUrls.keys()).join(', ')}]`);
   }, [generateQuestionOrder, bufferTTS]);
 
-  // 게임 시작
-  const startGame = useCallback(() => {
-    if (!playerName.trim()) return; // 이름이 없으면 시작하지 않음
+  // 안내 페이지 TTS 재생 함수
+  const playIntroTTS = useCallback(async (sentenceIndex: number) => {
+    // 스킵되었는지 확인
+    if (introSkipRef.current) {
+      console.log('⏭️ 안내 TTS 재생 중단됨 (스킵됨)');
+      return;
+    }
+    
+    if (sentenceIndex >= gameIntroSentences.length) {
+      // 모든 문장 재생 완료
+      setIntroIsPlaying(false);
+      console.log('🎬 안내 TTS 재생 완료');
+      
+      // 1초 후 게임 시작
+      setTimeout(() => {
+        startActualGame();
+      }, 1000);
+      return;
+    }
+    
+    try {
+      const sentence = gameIntroSentences[sentenceIndex];
+      const fullSentence = sentenceIndex === 0 ? `${playerName}${sentence}` : sentence;
+      
+      console.log(`🎤 안내 TTS 재생: ${sentenceIndex + 1}/${gameIntroSentences.length} - "${fullSentence}"`);
+      
+      // 타이핑 효과 시작 (강제로 0으로 초기화)
+      setIntroTypingProgress(0);
+      
+      // 약간의 지연 후 타이핑 시작 (초기화 완료 보장)
+      setTimeout(() => {
+        const typingInterval = setInterval(() => {
+          setIntroTypingProgress(prev => {
+            if (prev >= fullSentence.length) {
+              clearInterval(typingInterval);
+              return fullSentence.length;
+            }
+            return prev + 1;
+          });
+        }, 50); // 타이핑 속도
+      }, 200); // 초기화 지연 증가 (200ms)
+      
+      let audioUrl: string;
+      
+      // 동기적으로 버퍼에서 확인
+      const hasInBuffer = introTTSBufferRef.current.has(sentenceIndex);
+      console.log(`🔍 안내 버퍼 확인: 문장 ${sentenceIndex + 1}, 버퍼에 있음: ${hasInBuffer}`);
+      
+      if (hasInBuffer) {
+        audioUrl = introTTSBufferRef.current.get(sentenceIndex)!;
+        console.log(`📦 버퍼에서 안내 TTS 사용: 문장 ${sentenceIndex + 1}`);
+        
+        // 버퍼에서 제거 (성공적으로 재생된 후에만)
+        introTTSBufferRef.current.delete(sentenceIndex);
+        setIntroTTSBuffer(prev => {
+          const newBuffer = new Map(prev);
+          newBuffer.delete(sentenceIndex);
+          console.log(`📦 안내 버퍼에서 제거됨: 문장 ${sentenceIndex + 1}, 남은 버퍼: ${newBuffer.size}개`);
+          return newBuffer;
+        });
+        
+      } else {
+        // 버퍼에 없으면 우선순위를 높여 TTS 생성
+        console.log(`🚨 안내 버퍼에 없음 - 우선순위 TTS 생성: 문장 ${sentenceIndex + 1}`);
+        
+        // 랜덤 목소리 선택
+        const randomVoice = getRandomVoice();
+        
+        const requestBody = {
+          text: fullSentence,
+          voice_id: randomVoice.id,
+          style: randomVoice.style,
+          voice_settings: {
+            pitch_shift: 0,
+            pitch_variance: 1,
+            speed: randomVoice.speed
+          }
+        };
+        
+        console.log(`🎤 안내 TTS API 요청: ${randomVoice.name} (${randomVoice.style})`);
+        
+        // 새로운 AbortController 생성
+        const abortController = new AbortController();
+        introTTSRequestRef.current = abortController;
+        
+        const response = await fetch('https://quiet-ink-groq.vercel.app/api/tts', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: abortController.signal
+        });
+        
+        if (!response.ok) {
+          throw new Error(`TTS API 호출 실패: ${response.status}`);
+        }
+        
+        // 요청이 취소되었는지 확인
+        if (abortController.signal.aborted) {
+          console.log('❌ 안내 TTS 요청 취소됨');
+          return;
+        }
+        
+        const audioBlob = await response.blob();
+        
+        // 요청이 취소되었는지 다시 확인
+        if (abortController.signal.aborted) {
+          console.log('❌ 안내 TTS 요청 취소됨 (오디오 생성 후)');
+          URL.revokeObjectURL(URL.createObjectURL(audioBlob));
+          return;
+        }
+        
+        audioUrl = URL.createObjectURL(audioBlob);
+      }
+      
+      // 오디오 재생
+      const audio = new Audio(audioUrl);
+      introAudioRef.current = audio;
+      setIntroCurrentAudio(audio);
+      
+      // 오디오 재생 완료 대기
+      await new Promise<void>((resolve, reject) => {
+        audio.addEventListener('canplaythrough', () => {
+          // 스킵되었는지 다시 확인
+          if (introSkipRef.current) {
+            console.log(`⏭️ 안내 TTS 재생 중단됨 (스킵됨): ${sentenceIndex + 1}/${gameIntroSentences.length}`);
+            URL.revokeObjectURL(audioUrl);
+            resolve();
+            return;
+          }
+          
+          audio.play().then(() => {
+            console.log(`✅ 안내 TTS 재생 시작: ${sentenceIndex + 1}/${gameIntroSentences.length}`);
+          }).catch(reject);
+        }, { once: true });
+        
+        audio.addEventListener('ended', () => {
+          console.log(`✅ 안내 TTS 재생 완료: ${sentenceIndex + 1}/${gameIntroSentences.length}`);
+          URL.revokeObjectURL(audioUrl);
+          resolve();
+        }, { once: true });
+        
+        audio.addEventListener('error', reject, { once: true });
+        audio.load();
+      });
+      
+      // 다음 문장들을 미리 버퍼링 (백그라운드에서)
+      setTimeout(() => {
+        // 스킵되었는지 확인
+        if (!introSkipRef.current) {
+          startIntroBuffering(sentenceIndex + 1);
+        }
+      }, 100);
+      
+      // 다음 문장 재생 (타이핑 진행도 완전 초기화)
+      setIntroCurrentSentence(sentenceIndex + 1);
+      setIntroTypingProgress(0); // 다음 문장을 위해 타이핑 진행도 초기화
+      setTimeout(() => {
+        // 스킵되었는지 확인
+        if (!introSkipRef.current) {
+          playIntroTTS(sentenceIndex + 1);
+        }
+      }, 500); // 문장 간 0.5초 간격
+      
+    } catch (error) {
+      console.error('❌ 안내 TTS 재생 실패:', error);
+      // 에러 발생 시에도 다음 문장으로 진행
+      setIntroCurrentSentence(sentenceIndex + 1);
+      setTimeout(() => {
+        playIntroTTS(sentenceIndex + 1);
+      }, 1000);
+    }
+  }, [playerName, gameIntroSentences]);
+
+  // 안내 페이지 TTS 버퍼링 함수
+  const bufferIntroTTS = useCallback(async (sentenceIndex: number) => {
+    // 스킵되었는지 확인
+    if (introSkipRef.current) {
+      console.log(`⏭️ 안내 TTS 버퍼링 중단됨 (스킵됨): 문장 ${sentenceIndex + 1}`);
+      return null;
+    }
+    
+    console.log(`📦 안내 TTS 버퍼링 시작: 문장 ${sentenceIndex + 1}`);
+    
+    // 이미 버퍼에 있으면 스킵
+    if (introTTSBufferRef.current.has(sentenceIndex)) {
+      console.log(`⏭️ 이미 버퍼에 존재하여 스킵: 문장 ${sentenceIndex + 1}`);
+      return introTTSBufferRef.current.get(sentenceIndex);
+    }
+    
+    try {
+      const sentence = gameIntroSentences[sentenceIndex];
+      const fullSentence = sentenceIndex === 0 ? `${playerName}${sentence}` : sentence;
+      
+      // 랜덤 목소리 선택
+      const randomVoice = getRandomVoice();
+      
+      const requestBody = {
+        text: fullSentence,
+        voice_id: randomVoice.id,
+        style: randomVoice.style,
+        voice_settings: {
+          pitch_shift: 0,
+          pitch_variance: 1,
+          speed: randomVoice.speed
+        }
+      };
+      
+      console.log(`📦 안내 TTS 버퍼링 API 요청: 문장 ${sentenceIndex + 1} - ${randomVoice.name}`);
+      
+      const response = await fetch('https://quiet-ink-groq.vercel.app/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`TTS API 호출 실패: ${response.status}`);
+      }
+      
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // 동기적으로 버퍼에 추가
+      introTTSBufferRef.current.set(sentenceIndex, audioUrl);
+      
+      // 상태도 업데이트 (UI 동기화용)
+      setIntroTTSBuffer(prev => {
+        const newBuffer = new Map(prev);
+        newBuffer.set(sentenceIndex, audioUrl);
+        console.log(`✅ 안내 TTS 버퍼링 완료: 문장 ${sentenceIndex + 1}, 현재 버퍼 크기: ${newBuffer.size}`);
+        return newBuffer;
+      });
+      
+      return audioUrl;
+    } catch (error) {
+      console.error(`❌ 안내 TTS 버퍼링 실패: 문장 ${sentenceIndex + 1}`, error);
+    }
+    return null;
+  }, [playerName, gameIntroSentences]);
+
+  // 안내 페이지 순차적 버퍼링 함수
+  const startIntroBuffering = useCallback(async (startIndex: number) => {
+    // 스킵되었는지 확인
+    if (introSkipRef.current) {
+      console.log(`⏭️ 안내 페이지 순차적 버퍼링 중단됨 (스킵됨)`);
+      return;
+    }
+    
+    console.log(`🚀 안내 페이지 순차적 버퍼링 시작: 문장 ${startIndex + 1}부터`);
+    
+    // 남은 문장들을 버퍼링
+    for (let i = startIndex; i < gameIntroSentences.length; i++) {
+      // 각 반복마다 스킵 상태 확인
+      if (introSkipRef.current) {
+        console.log(`⏭️ 안내 페이지 순차적 버퍼링 중단됨 (스킵됨): 문장 ${i + 1}`);
+        return;
+      }
+      
+      if (introTTSBufferRef.current.has(i)) {
+        console.log(`⏭️ 이미 버퍼됨: 문장 ${i + 1}`);
+        continue;
+      }
+      
+      console.log(`📦 버퍼링 대상: 문장 ${i + 1}`);
+      await bufferIntroTTS(i);
+      
+      // 버퍼링 간격 (서버 부하 방지)
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    console.log(`✅ 안내 페이지 순차적 버퍼링 완료`);
+  }, [gameIntroSentences, bufferIntroTTS]);
+
+  // 안내 페이지 TTS 리소스 정리 함수
+  const cleanupIntroTTS = useCallback(() => {
+    console.log('🧹 안내 페이지 TTS 리소스 정리 시작');
+    
+    // 진행 중인 TTS 요청 취소
+    if (introTTSRequestRef.current) {
+      introTTSRequestRef.current.abort();
+      introTTSRequestRef.current = null;
+      console.log('🧹 안내 페이지 TTS 요청 취소됨');
+    }
+    
+    // 현재 재생 중인 오디오 정지 (더 강력한 정리)
+    if (introAudioRef.current) {
+      introAudioRef.current.pause();
+      introAudioRef.current.currentTime = 0;
+      introAudioRef.current.src = ''; // src를 비워서 완전히 정리
+      introAudioRef.current.load(); // 강제로 로드하여 정리
+      introAudioRef.current = null;
+      console.log('🧹 안내 페이지 오디오 정지됨');
+    }
+    
+    // 현재 오디오 상태 정리 (더 강력한 정리)
+    if (introCurrentAudio) {
+      introCurrentAudio.pause();
+      introCurrentAudio.currentTime = 0;
+      introCurrentAudio.src = ''; // src를 비워서 완전히 정리
+      introCurrentAudio.load(); // 강제로 로드하여 정리
+      setIntroCurrentAudio(null);
+      console.log('🧹 안내 페이지 현재 오디오 정리됨');
+    }
+    
+    // TTS 버퍼 정리
+    if (introTTSBuffer.size > 0) {
+      introTTSBuffer.forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+      setIntroTTSBuffer(new Map());
+      introTTSBufferRef.current.clear();
+      console.log('🧹 안내 페이지 TTS 버퍼 정리됨');
+    }
+    
+    // 타이핑 진행도 초기화
+    setIntroTypingProgress(0);
+    
+    // 재생 상태 중지
+    setIntroIsPlaying(false);
+    
+    // 현재 문장 인덱스 초기화
+    setIntroCurrentSentence(0);
+    
+    // 모든 타이머 강제 정리 (안내 페이지 관련)
+    const highestTimeoutId = setTimeout(";");
+    for (let i = 0; i < highestTimeoutId; i++) {
+      clearTimeout(i);
+    }
+    const highestIntervalId = setInterval(";");
+    for (let i = 0; i < highestIntervalId; i++) {
+      clearInterval(i);
+    }
+    
+    // 페이지의 모든 오디오 요소 강제 정지
+    const allAudioElements = document.querySelectorAll('audio');
+    allAudioElements.forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = '';
+      audio.load();
+    });
+    
+    console.log('🧹 안내 페이지 TTS 리소스 정리 완료');
+  }, [introCurrentAudio, introTTSBuffer]);
+
+  // 실제 게임 시작 함수
+  const startActualGame = useCallback(() => {
+    console.log('🎮 실제 게임 시작');
+    
+    // 안내 페이지 TTS 리소스 정리
+    cleanupIntroTTS();
+    
+    // 안내 페이지 관련 상태 완전 초기화
+    setIntroIsPlaying(false);
+    setIntroTypingProgress(0);
+    setIntroCurrentSentence(0);
+    introSkipRef.current = false;
+    introEnterBlockRef.current = false;
+    
+    // 추가적인 강제 정리
+    // 모든 타이머 강제 정리
+    const highestTimeoutId = setTimeout(";");
+    for (let i = 0; i < highestTimeoutId; i++) {
+      clearTimeout(i);
+    }
+    const highestIntervalId = setInterval(";");
+    for (let i = 0; i < highestIntervalId; i++) {
+      clearInterval(i);
+    }
+    
+    // 페이지의 모든 오디오 요소 강제 정지
+    const allAudioElements = document.querySelectorAll('audio');
+    allAudioElements.forEach(audio => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = '';
+      audio.load();
+    });
+    
+    // 100ms 후 다시 한번 정리 (비동기 작업 완료 대기)
+    setTimeout(() => {
+      const allAudioElements2 = document.querySelectorAll('audio');
+      allAudioElements2.forEach(audio => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.src = '';
+        audio.load();
+      });
+    }, 100);
     
     // 기존 타이머 정리
     if (timerRef.current) {
@@ -481,11 +891,56 @@ function App() {
     // 오디오 컨텍스트 활성화
     activateAudioContext();
     
+    // 본게임 진입 시 BGM 재생
+    setTimeout(() => {
+      playBGM();
+    }, 500);
+    
     // 추가 버퍼링 시작 (백그라운드에서)
     setTimeout(() => {
       startSequentialBuffering();
     }, 100);
-  }, [playerName, questionOrder, generateQuestionOrder, cleanupCurrentAudio, startSequentialBuffering, activateAudioContext]);
+  }, [questionOrder, generateQuestionOrder, cleanupCurrentAudio, startSequentialBuffering, activateAudioContext, cleanupIntroTTS]);
+
+  // 게임 시작 (안내 페이지로 이동)
+  const startGame = useCallback(() => {
+    if (!playerName.trim()) return; // 이름이 없으면 시작하지 않음
+    
+    console.log('🎬 안내 페이지 시작');
+    
+    // 안내 페이지 상태 초기화
+    setIntroCurrentSentence(0);
+    setIntroIsPlaying(true);
+    setIntroTypingProgress(0); // 타이핑 진행도 초기화
+    introSkipRef.current = false; // 스킵 방지 플래그 초기화
+    introEnterBlockRef.current = true; // Enter 키 차단 시작
+    
+    // 타이핑 진행도 강제 초기화 (추가 지연)
+    setTimeout(() => {
+      setIntroTypingProgress(0);
+    }, 50);
+    
+    // 안내 페이지로 이동
+    setGameState('intro');
+    
+    // 오디오 컨텍스트 활성화
+    activateAudioContext();
+    
+    // 2초 후 Enter 키 입력 허용
+    setTimeout(() => {
+      introEnterBlockRef.current = false;
+      console.log('✅ 안내 페이지 Enter 키 입력 허용');
+    }, 2000);
+    
+    // 첫 번째 문장은 즉시 재생, 나머지는 버퍼링
+    setTimeout(() => {
+      playIntroTTS(0);
+      // 백그라운드에서 나머지 문장들 버퍼링
+      setTimeout(() => {
+        startIntroBuffering(1);
+      }, 500);
+    }, 1000);
+  }, [playerName, playIntroTTS, activateAudioContext]);
 
   // 타이핑 애니메이션 함수
   const startTypingAnimation = useCallback((text: string, onComplete?: () => void) => {
@@ -654,11 +1109,6 @@ function App() {
     
     // BGM 볼륨을 20%로 줄임 (중지하지 않음)
     setBGMVolume(0.2);
-    
-    // BGM이 없으면 재생 시작
-    if (!bgmAudioRef.current) {
-      await playBGM();
-    }
     
     setLastProcessedQuestionId(question.id);
     
@@ -948,6 +1398,25 @@ function App() {
     }
   }, [currentQuestion, userAnswer, questionOrder, currentQuestionIndex, timeLeft, isTransitioning, startTypingAnimation, startDescriptionTypingAnimation, generateAndPlayTTS, isProcessingNextQuestion, currentAudioUrl, setBGMVolume]);
 
+  // URL에서 name 파라미터 추출 및 디코딩 함수
+  const extractNameFromURL = useCallback((url: string): string => {
+    try {
+      // URL 객체 생성
+      const urlObj = new URL(url);
+      // name 파라미터 추출
+      const nameParam = urlObj.searchParams.get('name');
+      if (nameParam) {
+        // URL 디코딩
+        const decodedName = decodeURIComponent(nameParam);
+        console.log('🔗 URL에서 이름 추출:', { original: nameParam, decoded: decodedName });
+        return decodedName;
+      }
+    } catch (error) {
+      console.error('❌ URL 파싱 실패:', error);
+    }
+    return '';
+  }, []);
+
   // 이름 입력 시 엔터키 처리
   const handleNameKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -960,6 +1429,31 @@ function App() {
       }
     }
   }, [playerName, startGame]);
+
+  // 이름 입력 필드 변경 처리 (URL 자동 감지)
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    
+    // URL 패턴 감지 (http:// 또는 https:// 또는 @로 시작하는 경우)
+    if (inputValue.startsWith('http://') || inputValue.startsWith('https://') || inputValue.startsWith('@')) {
+      const urlToProcess = inputValue.startsWith('@') ? inputValue.substring(1) : inputValue;
+      const extractedName = extractNameFromURL(urlToProcess);
+      
+      if (extractedName) {
+        setPlayerName(extractedName);
+        setShowNameError(false);
+        console.log('✅ URL에서 이름 자동 추출 완료:', extractedName);
+      } else {
+        setPlayerName(inputValue);
+      }
+    } else {
+      setPlayerName(inputValue);
+    }
+    
+    if (showNameError) {
+      setShowNameError(false);
+    }
+  }, [extractNameFromURL, showNameError]);
 
   // 게임 종료
   const endGame = useCallback(() => {
@@ -1015,6 +1509,9 @@ function App() {
       console.log('🧹 TTS 오디오 URL 정리됨');
     }
     
+    // 안내 페이지 TTS 리소스 정리
+    cleanupIntroTTS();
+    
     // 게임 상태 초기화
     setGameState('start');
     setCurrentQuestion(null);
@@ -1028,6 +1525,13 @@ function App() {
     setLastProcessedQuestionId(null);
     setIsProcessingNextQuestion(false);
     isProcessingRef.current = false;
+    
+    // 안내 페이지 상태 초기화
+    setIntroCurrentSentence(0);
+    setIntroIsPlaying(false);
+    setIntroTypingProgress(0); // 타이핑 진행도 초기화
+    introSkipRef.current = false; // 스킵 플래그 초기화
+    introEnterBlockRef.current = false; // Enter 키 차단 플래그 초기화
     
     // 시작 화면 타이핑 애니메이션 초기화
     if (startScreenTypingTimerRef.current) {
@@ -1066,11 +1570,14 @@ function App() {
     setTtsBuffer(new Map());
     
     console.log('🔄 시작 화면으로 이동 완료, 초기 버퍼링 준비');
-  }, [currentAudioUrl, stopBGM]);
+  }, [currentAudioUrl, stopBGM, introCurrentAudio]);
 
   // 키보드 이벤트 처리
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
+      // 키보드 이벤트 디바운싱 (중복 방지)
+      if (e.repeat) return; // 키 반복 방지
+      
       if (gameState === 'playing') {
         if (e.key === 'Enter') {
           submitAnswer();
@@ -1078,6 +1585,28 @@ function App() {
       } else if (gameState === 'gameOver') {
         if (e.key === 'Enter') {
           goToStart();
+        }
+      } else if (gameState === 'intro') {
+        if (e.key === 'Enter' && !introSkipRef.current && !introEnterBlockRef.current) {
+          // 안내 페이지에서 Enter 키로 스킵 (중복 방지 + 차단 해제 후)
+          console.log('⏭️ 안내 페이지 스킵');
+          introSkipRef.current = true; // 스킵 플래그 설정
+          
+          // 즉시 모든 안내 페이지 상태 초기화
+          setIntroIsPlaying(false);
+          setIntroTypingProgress(0);
+          setIntroCurrentSentence(0);
+          
+          // 안내 페이지 TTS 리소스 정리
+          cleanupIntroTTS();
+          
+          // 바로 게임 시작
+          setTimeout(() => {
+            startActualGame();
+          }, 100);
+        } else if (e.key === 'Enter' && introEnterBlockRef.current) {
+          // Enter 키가 차단된 상태에서는 무시
+          console.log('🚫 Enter 키 입력 차단됨');
         }
       }
     };
@@ -1121,7 +1650,7 @@ function App() {
       window.removeEventListener('keypress', handleKeyPress);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [gameState, submitAnswer, goToNextQuestion, goToStart]);
+  }, [gameState, submitAnswer, goToNextQuestion, goToStart, introCurrentAudio, startActualGame]);
 
   // 게임 타이머
   useEffect(() => {
@@ -1217,6 +1746,17 @@ function App() {
       }, 500);
     }
   }, [gameState, questionOrder.length, isBuffering, startInitialBuffering]);
+
+  // 안내 페이지에서 시작 화면으로 돌아갈 때 초기 버퍼링 재시작
+  useEffect(() => {
+    if (gameState === 'start' && questionOrder.length === 0 && !isBuffering && introCurrentSentence === 0) {
+      console.log('🔄 안내 페이지에서 돌아온 후 초기 버퍼링 재시작');
+      // 약간의 지연 후 초기 버퍼링 시작
+      setTimeout(() => {
+        startInitialBuffering();
+      }, 500);
+    }
+  }, [gameState, questionOrder.length, isBuffering, startInitialBuffering, introCurrentSentence]);
 
 
 
@@ -1400,12 +1940,7 @@ function App() {
                     type="text"
                     placeholder="이름을 입력하세요"
                     value={playerName}
-                    onChange={(e) => {
-                      setPlayerName(e.target.value);
-                      if (showNameError) {
-                        setShowNameError(false);
-                      }
-                    }}
+                    onChange={handleNameChange}
                     onKeyPress={handleNameKeyPress}
                     className={`answer-field ${showNameError ? 'error-placeholder' : ''}`}
                     style={{
@@ -1435,6 +1970,99 @@ function App() {
                 </span>
               </div>
             )}
+          </div>
+        )}
+
+        {gameState === 'intro' && (
+          <div className="game-screen">
+            {/* 게임 제목 영역 */}
+            <div className="quiz-title-fixed">
+              <div className="subtitle">수퍼톤 TTS로 듣고 풀어보는</div>
+              <h1 className="title">광고 상식 스피드 퀴즈</h1>
+            </div>
+            
+            {/* 게임 정보 영역 숨김 */}
+            <div className="game-info" style={{ visibility: 'hidden' }}>
+              <div className="timer">
+                <div className="timer-label">남은 시간</div>
+                <div className="timer-value">--</div>
+                <span className="timer-unit">초</span>
+              </div>
+              <div className="score">
+                <div className="score-label">내 점수</div>
+                <div className="score-value">--</div>
+                <span className="score-unit">점</span>
+              </div>
+            </div>
+            
+            {/* 안내 페이지 내용 */}
+            <div className="question-container">
+              <div className="description-container" style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '0vh' }}>
+                <div className="description" style={{ 
+                  fontSize: '2.2vw',
+                  padding: '0 5%', 
+                  textAlign: 'center',
+                  wordWrap: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  maxWidth: '100%',
+                  lineHeight: '1.6'
+                }}>
+                  {gameIntroSentences.map((sentence, index) => {
+                    const isCurrentSentence = index === introCurrentSentence;
+                    const isCompleted = index < introCurrentSentence;
+                    const fullSentence = index === 0 ? `${playerName}${sentence}` : sentence;
+                    
+                    return (
+                      <div 
+                        key={index} 
+                        style={{ 
+                          marginBottom: '2vh',
+                          opacity: isCompleted ? 1 : (isCurrentSentence ? 0.8 : 0.3),
+                          fontWeight: isCurrentSentence ? 'bold' : 'normal',
+                          color: isCurrentSentence ? '#000' : '#333'
+                        }}
+                      >
+                        {isCurrentSentence && introIsPlaying && introTypingProgress > 0 ? 
+                          fullSentence.split('').map((char, charIndex) => {
+                            const isEmoji = /\p{Emoji}/u.test(char);
+                            return (
+                              <span 
+                                key={charIndex} 
+                                style={{ 
+                                  opacity: charIndex < introTypingProgress ? 1 : 0
+                                }}
+                                className={isEmoji ? 'emoji-char' : ''}
+                              >
+                                {char}
+                                {charIndex === introTypingProgress - 1 && <span className="typing-cursor">|</span>}
+                              </span>
+                            );
+                          }) : 
+                          isCompleted ? 
+                            fullSentence : 
+                            (isCurrentSentence ? '' : '') // 현재 문장이지만 타이핑 진행도가 0이면 빈 화면
+                        }
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 하단 영역 */}
+              <div className="answer-section">
+                <div className="keyboard-hints">
+                  <span>소개 넘기기: Enter</span>
+                </div>
+                <div className="answer-input">
+                  {/* 빈 입력 영역 (위치 맞추기용) */}
+                </div>
+                <div className="description-container">
+                  <div className="description">
+                    {/* 상태 표시 메시지 제거 */}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
